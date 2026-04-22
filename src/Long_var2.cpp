@@ -2,17 +2,13 @@
 #include <Encoder.h>
 #include <NecDecoder.h>
 #include <SPI.h>
+
 #include <Ethernet.h>
 #include <EthernetUdp.h>
 #include <Dns.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
-gfgfgfgfgffgfgfgfhghghg
-ere
-fgrgrgrgrgr
-rgrgrg
-
 
 // Объявляем дисплей с использованием SPI интерфейса
 U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ 10, /* dc=*/ 9, /* reset=*/ 12);
