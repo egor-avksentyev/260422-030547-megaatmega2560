@@ -4,7 +4,6 @@
 #include <SPI.h>
 #include <Ethernet.h>
 #include <EthernetUdp.h>
-
 #include <Dns.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
