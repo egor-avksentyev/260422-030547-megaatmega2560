@@ -6,12 +6,7 @@
 #include <EthernetUdp.h>
 #include <Dns.h>
 #include <Adafruit_GFX.h>
-
-
-
-
-
-
+prrrrr
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
 
