@@ -60,10 +60,12 @@ void handleRemoteInput() {
             applySourceSelection();
             drawSourceScreen(settings[currentMenuItem]);
           } else if (menuItems[currentMenuItem] == "Bass") {
+            cancelBassRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
             motorControl(SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
             lastMotorInputTime = millis();
             drawArrowIndicator(0, true, false);
           } else if (menuItems[currentMenuItem] == "High") {
+            cancelHighRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
             motorControl(SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
             lastMotorInputTime = millis();
             drawArrowIndicator(0, true, false);
@@ -104,10 +106,12 @@ void handleRemoteInput() {
             applySourceSelection();
             drawSourceScreen(settings[currentMenuItem]);
           } else if (menuItems[currentMenuItem] == "Bass") {
+            cancelBassRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
             motorControl(-SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
             lastMotorInputTime = millis();
             drawArrowIndicator(0, false, true);
           } else if (menuItems[currentMenuItem] == "High") {
+            cancelHighRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
             motorControl(-SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
             lastMotorInputTime = millis();
             drawArrowIndicator(0, false, true);

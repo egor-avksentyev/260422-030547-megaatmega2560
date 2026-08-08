@@ -84,3 +84,20 @@ int currentPotValueMax() {
 bool currentPotIsDb() {
   return menuItems[currentMenuItem] == "Bass" || menuItems[currentMenuItem] == "High";
 }
+
+static int calRawForValue(int targetValue, const int calRaw[], const int calValue[], int calPoints) {
+  for (int i = 0; i < calPoints; i++) {
+    if (calValue[i] == targetValue) {
+      return calRaw[i];
+    }
+  }
+  return calRaw[0]; // Не должно случаться — в таблице обязана быть точная точка 0dB
+}
+
+int bassZeroRaw() {
+  return calRawForValue(0, bassPotCalRaw, bassPotCalValue, bassPotCalPoints);
+}
+
+int highZeroRaw() {
+  return calRawForValue(0, highPotCalRaw, highPotCalValue, highPotCalPoints);
+}

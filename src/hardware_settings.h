@@ -39,6 +39,11 @@
 #define MOTOR3_PWM2 4
 #define SLIDER_MOTOR_SPEED 40 // Фиксированная скорость моторов Bass/High/Volume при вращении энкодера/пульта (диапазон -50..50)
 #define SLIDER_MOTOR_IDLE_TIMEOUT 120 // мс без новых команд от энкодера/пульта — мотор мгновенно останавливается
+// Допуск в raw-отсчётах для автовозврата Bass/High к 0dB после Bypass (см. motor_driver_logic.cpp).
+// Специально уже, чем BASS_POT_ZERO_SNAP_RAW/HIGH_POT_ZERO_SNAP_RAW — снап нужен только для
+// чистого отображения "0dB" на экране, а моторное автовозвращение должно доводить ручку до
+// самой калибровочной точки, а не до края зоны снапа, иначе ручка не докручивает пару градусов
+#define MOTOR_RECENTER_RAW_EPSILON 2
 
 // --- Потенциометры обратной связи положения ручек (+5V/GND по краям, средний вывод сюда) ---
 #define BASS_POT_PIN A9
@@ -95,6 +100,15 @@
 // прошивки светодиоды зажигаются не в том месте/порядке, что физически ожидаешь
 const uint8_t volumeRingOrder[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 
+// Как только Volume превышает VOLUME_MID_PERCENT (строго больше — не при значении
+// ровно 50 и не ниже), 6-й светодиод (индекс 5 в volumeRingOrder — тот, что горел ещё
+// ДО 50%) перестаёт гореть ровно и начинает непрерывно "дышать" тусклый->яркий->тусклый,
+// как визуальная отметка "громкость выше середины шкалы"
+#define VOLUME_MID_PERCENT 50
+#define VOLUME_MID_BREATH_LED_INDEX 5 // Индекс в volumeRingOrder (0-based) — 6-й физический светодиод
+#define VOLUME_MID_BREATH_PULSE_MS 1500 // Длительность одного "вздоха" — медленнее, чем у зелёной пары (ZERO_BLINK_PULSE_MS)
+#define VOLUME_MID_BREATH_MIN_BRIGHTNESS 15
+
 // Bass/High: та же схема (12 светодиодов, 2 нижних не используются), но шкала
 // двусторонняя (-10..+10dB с центром на 0) — заливка идёт от центра в обе стороны.
 // Центральная пара (0dB) — зелёная, горит всегда как метка нуля; остальные 4+4
@@ -150,18 +164,22 @@ const RingColor ringColorPalette[RING_COLOR_COUNT] = {
 #define ZERO_BLINK_MIN_BRIGHTNESS 15
 
 // ============================================================================
-// Разовая анимация на кольцах Bass/High при переключении Bypass (кнопкой, энкодером
-// или пультом). Bypass выключается: кольцо заливается целиком, шаг за шагом в обе
-// стороны от зелёного центра, держим залитым, потом гасим. Bypass включается: только
-// центральная зелёная пара несколько раз "вальяжно" мигает красным
+// Анимация на кольцах Bass/High, привязанная к состоянию Bypass (кнопка, энкодер
+// или пульт — источник переключения не важен). Bypass включён: центральная пара
+// несколько раз "вальяжно" дышит красным, затем держится ровно ярко-красной —
+// и остаётся такой всё время, пока Bypass не выключат (это не разовая анимация,
+// а постоянное состояние, просто с "вступлением"). Bypass выключается: разовая
+// анимация заливки кольца целиком, шаг за шагом в обе стороны от зелёного центра,
+// держим залитым, потом гасим и возвращаемся к обычной отрисовке уровня дБ
+// (зелёный центр на 0dB)
 // ============================================================================
 #define BYPASS_FILL_STEP_MS 200 // Задержка между шагами заливки в каждую сторону
 #define BYPASS_FILL_STEPS 4 // По 4 светодиода на каждую сторону (ringNegativeOrder/ringPositiveOrder)
 #define BYPASS_FILL_HOLD_MS 400 // Сколько держим полностью залитое кольцо перед возвратом
 #define BYPASS_FILL_TOTAL_MS (BYPASS_FILL_STEP_MS * BYPASS_FILL_STEPS + BYPASS_FILL_HOLD_MS)
 #define BYPASS_BLINK_PULSE_MS 500 // Длительность одного "вздоха"
-#define BYPASS_BLINK_COUNT 3
-#define BYPASS_BLINK_TOTAL_MS (BYPASS_BLINK_PULSE_MS * BYPASS_BLINK_COUNT)
+#define BYPASS_BLINK_COUNT 3 // Сколько вздохов делаем перед тем, как держаться ровно ярко
+#define BYPASS_BLINK_INTRO_MS (BYPASS_BLINK_PULSE_MS * BYPASS_BLINK_COUNT)
 #define BYPASS_BLINK_MIN_BRIGHTNESS 15
 
 // ============================================================================
@@ -186,7 +204,7 @@ const RingColor ringColorPalette[RING_COLOR_COUNT] = {
 #define VOLUME_POT_MIN_SNAP_RAW 1 // 0-25% сжаты в 5 raw-отсчётов — большой запас "съедал" бы точку 25%
 #define VOLUME_POT_MAX_SNAP_RAW 10
 
-const int bassPotCalRaw[] = {7, 12, 21, 109, 159, 197, 233, 588, 1010};
+const int bassPotCalRaw[] = {7, 12, 21, 109, 159, 191, 233, 588, 1010};
 const int bassPotCalValue[] = {-10, -8, -5, -2, -1, 0, 1, 5, 10};
 const int bassPotCalPoints = sizeof(bassPotCalRaw) / sizeof(bassPotCalRaw[0]);
 
