@@ -2,18 +2,25 @@
 #include "hardware_settings.h"
 #include "neopixel.h"
 #include "main.h"
+#include "motor_driver_logic.h"
 
 int bypassAnimMode = 0;
 unsigned long bypassAnimStart = 0;
 
 // Запускает анимацию колец Bass/High под текущее settings[4] (Bypass) — вызывается
 // и от физической кнопки, и от переключения пункта меню "Bypass" энкодером/пультом,
-// чтобы анимация работала одинаково независимо от источника переключения
+// чтобы анимация работала одинаково независимо от источника переключения. Плюс —
+// независимо от того, включаем мы Bypass или выключаем, — запускает автовозврат
+// Bass/High в 0dB, если они сейчас не там
 void triggerBypassAnim() {
   bypassAnimMode = (settings[4] == 0) ? 1 : 2;
   bypassAnimStart = millis();
+  requestBassHighRecenter();
 }
 
+// Разовая анимация заливки (Bypass выключается) — не привязана к реальному значению,
+// шаг за шагом заполняет кольцо в обе стороны от зелёного центра за BYPASS_FILL_TOTAL_MS,
+// после чего main.cpp сам возвращает обычную (реальную) отрисовку уровня дБ
 void renderBypassFillAnim(Adafruit_NeoPixel &ring, unsigned long elapsed) {
   ring.clear();
   ring.setPixelColor(ringCenterPair[0], 0, 255, 0);
@@ -26,7 +33,12 @@ void renderBypassFillAnim(Adafruit_NeoPixel &ring, unsigned long elapsed) {
   ring.show();
 }
 
+// Несколько "вздохов" тусклый->яркий->тусклый, затем держим ровно ярко-красным —
+// и остаётся так, пока Bypass не выключат (elapsed растёт без ограничения)
 uint8_t bypassBlinkBrightness(unsigned long elapsed) {
+  if (elapsed >= BYPASS_BLINK_INTRO_MS) {
+    return 255;
+  }
   unsigned long pos = elapsed % BYPASS_BLINK_PULSE_MS;
   unsigned long half = BYPASS_BLINK_PULSE_MS / 2;
   if (pos < half) {
@@ -35,7 +47,11 @@ uint8_t bypassBlinkBrightness(unsigned long elapsed) {
   return map(pos, half, BYPASS_BLINK_PULSE_MS, 255, BYPASS_BLINK_MIN_BRIGHTNESS);
 }
 
-void renderBypassBlinkAnim(Adafruit_NeoPixel &ring, unsigned long elapsed) {
+// dbValue — реальное текущее положение ручки: "жёлтые" светодиоды гаснут по мере
+// возврата к нулю, центр — красный (дыхание, см. bypassBlinkBrightness())
+void renderBypassBlinkAnim(Adafruit_NeoPixel &ring, unsigned long elapsed, int dbValue) {
+  ring.clear();
+  renderDbRingOuterLeds(ring, dbValue);
   uint8_t b = bypassBlinkBrightness(elapsed);
   ring.setPixelColor(ringCenterPair[0], b, 0, 0);
   ring.setPixelColor(ringCenterPair[1], b, 0, 0);

@@ -15,3 +15,11 @@ int readCurrentPotPercent(int* rawOut = nullptr);
 int currentPotValueMin();
 int currentPotValueMax();
 bool currentPotIsDb();
+
+// Точный raw-отсчёт калибровочной точки 0dB — не спутать с "снапнутым" процентом/дБ
+// из readBassPotPercent()/readHighPotPercent(): тот округляет к 0 в пределах
+// *_POT_ZERO_SNAP_RAW (нужно для чистого отображения "0dB" на экране), а моторное
+// автовозвращение (см. motor_driver_logic.cpp) должно доводить ручку до самой точки,
+// а не просто до края зоны снапа — иначе не докручивает несколько градусов до истинного нуля
+int bassZeroRaw();
+int highZeroRaw();

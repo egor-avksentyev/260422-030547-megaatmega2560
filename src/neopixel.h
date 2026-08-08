@@ -24,8 +24,12 @@ extern DbRingState bassRingState;
 extern DbRingState highRingState;
 
 void updateVolumeRing(int percent);
+uint8_t volumeMidBreathBrightness(unsigned long elapsed);
+bool volumeRingBreathing();
+void renderVolumeRingBreath();
 uint8_t zeroBlinkBrightness(unsigned long elapsed);
 bool dbRingBlinking(const DbRingState &state);
 void renderDbRing(Adafruit_NeoPixel &ring, int dbValue, DbRingState &state);
+void renderDbRingOuterLeds(Adafruit_NeoPixel &ring, int dbValue);
 void applyRingColorScheme();
 void applyRingDimmer();

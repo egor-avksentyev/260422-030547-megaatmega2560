@@ -124,6 +124,10 @@ void loop() {
   checkEncoderButton();
   checkBypassButton();
 
+  if (!powerOff) {
+    updateBassHighRecenter(); // Автовозврат Bass/High в 0dB после переключения Bypass
+  }
+
   if (encoderValue != 0) {
     if (!inSettingsMode) {
       if (encoderValue > 0) {
@@ -167,11 +171,13 @@ void loop() {
         int direction = (encoderValue > 0) ? 1 : -1;
 
         if (menuItems[currentMenuItem] == "Bass") {
+          cancelBassRecenter(); // Ручное управление энкодером отменяет автовозврат после Bypass
           motorControl(direction * SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
           lastMotorInputTime = millis();
           encoderValue = 0;
           drawArrowIndicator(0, showArrowRight, showArrowLeft);
         } else if (menuItems[currentMenuItem] == "High") {
+          cancelHighRecenter(); // Ручное управление энкодером отменяет автовозврат после Bypass
           motorControl(direction * SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
           lastMotorInputTime = millis();
           encoderValue = 0;
@@ -229,29 +235,38 @@ void loop() {
     }
   }
 
-  // Во время анимации мигания (возврат в 0dB) кольцу нужно обновляться чаще для
-  // плавности — но ТОЛЬКО пока анимация активна, и без перечтения потенциометра
-  // (дёшево: просто пересчёт яркости уже известного значения + show())
+  // Во время анимации мигания (возврат в 0dB, дыхание Volume выше середины шкалы)
+  // кольцу нужно обновляться чаще для плавности — но ТОЛЬКО пока анимация активна,
+  // и без перечтения потенциометра (дёшево: просто пересчёт яркости уже известного
+  // значения + show())
   static unsigned long lastBlinkRender = 0;
-  if (!powerOff && bypassAnimMode == 0 && millis() - lastBlinkRender >= 30) {
-    if (dbRingBlinking(bassRingState)) {
-      renderDbRing(bassRing, bassRingState.lastValue, bassRingState);
+  if (!powerOff && millis() - lastBlinkRender >= 30) {
+    if (bypassAnimMode == 0) {
+      if (dbRingBlinking(bassRingState)) {
+        renderDbRing(bassRing, bassRingState.lastValue, bassRingState);
+      }
+      if (dbRingBlinking(highRingState)) {
+        renderDbRing(highRing, highRingState.lastValue, highRingState);
+      }
     }
-    if (dbRingBlinking(highRingState)) {
-      renderDbRing(highRing, highRingState.lastValue, highRingState);
+    if (volumeRingBreathing()) {
+      renderVolumeRingBreath();
     }
     lastBlinkRender = millis();
   }
 
-  // Разовая анимация переключения Bypass кнопкой — заливка кольца (Bypass выключен)
-  // или мигание зелёной пары красным (Bypass включён), см. checkBypassButton().
-  // Обновляется чаще (30мс) для плавности, пока активна; когда завершится — просто
-  // гасим флаг, и предыдущий блок сам вернёт обычное отображение уровня дБ
+  // Анимация, привязанная к состоянию Bypass, см. checkBypassButton()/triggerBypassAnim().
+  // Режим 1 (заливка, Bypass выключается) — разовая, конечная: по истечении гасим флаг
+  // и сразу возвращаем обычное отображение уровня дБ (без ожидания следующего 200мс тика).
+  // Режим 2 (мигание красным, Bypass включён) — держится ВСЁ время, пока Bypass включён,
+  // и сам не заканчивается: заканчивает его только повторный triggerBypassAnim() при
+  // выключении Bypass (переводит в режим 1)
   if (!powerOff && bypassAnimMode != 0) {
     unsigned long elapsed = millis() - bypassAnimStart;
-    unsigned long totalMs = (bypassAnimMode == 1) ? BYPASS_FILL_TOTAL_MS : BYPASS_BLINK_TOTAL_MS;
-    if (elapsed >= totalMs) {
+    if (bypassAnimMode == 1 && elapsed >= BYPASS_FILL_TOTAL_MS) {
       bypassAnimMode = 0;
+      renderDbRing(bassRing, readBassPotPercent(), bassRingState);
+      renderDbRing(highRing, readHighPotPercent(), highRingState);
     } else {
       static unsigned long lastBypassAnimRender = 0;
       if (millis() - lastBypassAnimRender >= 30) {
@@ -260,8 +275,8 @@ void loop() {
           renderBypassFillAnim(bassRing, elapsed);
           renderBypassFillAnim(highRing, elapsed);
         } else {
-          renderBypassBlinkAnim(bassRing, elapsed);
-          renderBypassBlinkAnim(highRing, elapsed);
+          renderBypassBlinkAnim(bassRing, elapsed, readBassPotPercent());
+          renderBypassBlinkAnim(highRing, elapsed, readHighPotPercent());
         }
       }
     }

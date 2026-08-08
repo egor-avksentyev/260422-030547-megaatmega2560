@@ -44,6 +44,8 @@ void powerOffDevices() {
   bypassAnimMode = 0; // Прерываем анимацию колец, если она была активна на момент выключения
 
   stopAllMotors();
+  cancelBassRecenter(); // Не продолжать автовозврат Bass/High после включения питания заново
+  cancelHighRecenter();
   delay(100); // Небольшая задержка для гарантированного отключения
   u8g2.setPowerSave(1); // Выключаем дисплей
   volumeRing.clear(); // Гасим кольца Volume/Bass/High

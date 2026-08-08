@@ -13,9 +13,36 @@ uint8_t currentRingColorB = ringColorPalette[RING_COLOR_DEFAULT].b;
 DbRingState bassRingState;
 DbRingState highRingState;
 
+// Яркость 6-го светодиода, пока Volume превышает VOLUME_MID_PERCENT: непрерывное
+// "дыхание" тусклый->яркий->тусклый, без остановки (в отличие от zeroBlinkBrightness,
+// который через несколько вздохов держится ровно ярко)
+uint8_t volumeMidBreathBrightness(unsigned long elapsed) {
+  unsigned long pos = elapsed % VOLUME_MID_BREATH_PULSE_MS;
+  unsigned long half = VOLUME_MID_BREATH_PULSE_MS / 2;
+  if (pos < half) {
+    return map(pos, 0, half, VOLUME_MID_BREATH_MIN_BRIGHTNESS, 255);
+  }
+  return map(pos, half, VOLUME_MID_BREATH_PULSE_MS, 255, VOLUME_MID_BREATH_MIN_BRIGHTNESS);
+}
+
+static int lastVolumePercent = 0; // Кэш последнего процента — чтобы дыхание можно было перерисовывать чаще без лишних analogRead()
+
+// true, пока громкость выше VOLUME_MID_PERCENT (используется, чтобы включить более
+// частое обновление кольца ТОЛЬКО на время дыхания, не постоянно — как dbRingBlinking())
+bool volumeRingBreathing() {
+  return lastVolumePercent > VOLUME_MID_PERCENT;
+}
+
+// Перерисовывает кольцо Volume по уже известному (закэшированному) проценту — для
+// частого обновления одной только яркости дышащего светодиода, без нового считывания потенциометра
+void renderVolumeRingBreath() {
+  updateVolumeRing(lastVolumePercent);
+}
+
 // Зажигает светодиоды кольца Volume по кругу пропорционально уровню (0-100%),
 // 2 нижних светодиода (VOLUME_RING_SKIP_A/B) в заливку не участвуют
 void updateVolumeRing(int percent) {
+  lastVolumePercent = percent;
   // Двумя отрезками: 0%->0, 50%->7, 100%->10 — загорается быстрее в первой половине
   // хода (раньше жаловались, что "отстаёт"), но 0% гарантированно гасит все светодиоды
   int litCount;
@@ -25,11 +52,16 @@ void updateVolumeRing(int percent) {
     litCount = map(percent, 50, 100, 7, 10);
   }
   litCount = constrain(litCount, 0, 10);
+  bool exceededMidPoint = percent > VOLUME_MID_PERCENT; // Строго выше — не на 50% и не ниже
   volumeRing.clear();
   for (int i = 0; i < litCount; i++) {
     // Градиент яркости по кругу: первый горящий светодиод самый тусклый (i=0 -> 1/10),
     // последний — самый яркий (i=9 -> 10/10). Дальше ещё умножается на общий Dimmer
     float fraction = (i + 1) / 10.0;
+    if (exceededMidPoint && i == VOLUME_MID_BREATH_LED_INDEX) {
+      // 6-й светодиод (горел ещё до 50%) — дышит, пока громкость выше середины шкалы
+      fraction = volumeMidBreathBrightness(millis()) / 255.0;
+    }
     volumeRing.setPixelColor(volumeRingOrder[i],
       (uint8_t)(currentRingColorR * fraction),
       (uint8_t)(currentRingColorG * fraction),
@@ -58,6 +90,35 @@ bool dbRingBlinking(const DbRingState &state) {
   return state.lastValue == 0 && (millis() - state.zeroEnterTime) < ZERO_BLINK_TOTAL_MS;
 }
 
+// Зажигает "жёлтые" (не центральные) светодиоды кольца Bass/High в сторону "-" или "+"
+// от центра по модулю dbValue — на нуле ничего не зажигает (см. renderDbRing). Вынесена
+// отдельно, чтобы этой же реальной живой отрисовкой (гаснет по мере приближения к нулю)
+// могли пользоваться и анимации Bypass (renderBypassFillAnim/renderBypassBlinkAnim),
+// не только обычная отрисовка уровня дБ
+void renderDbRingOuterLeds(Adafruit_NeoPixel &ring, int dbValue) {
+  if (dbValue > 0) {
+    int litCount = constrain(map(dbValue, 0, 10, 0, 4), 0, 4);
+    for (int i = 0; i < litCount; i++) {
+      // Градиент от нуля к краю: ближний к центру светодиод (i=0) самый тусклый,
+      // крайний (i=3) самый яркий. Зелёной пары это не касается
+      float fraction = (i + 1) / 4.0;
+      ring.setPixelColor(ringPositiveOrder[i],
+        (uint8_t)(currentRingColorR * fraction),
+        (uint8_t)(currentRingColorG * fraction),
+        (uint8_t)(currentRingColorB * fraction));
+    }
+  } else if (dbValue < 0) {
+    int litCount = constrain(map(-dbValue, 0, 10, 0, 4), 0, 4);
+    for (int i = 0; i < litCount; i++) {
+      float fraction = (i + 1) / 4.0;
+      ring.setPixelColor(ringNegativeOrder[i],
+        (uint8_t)(currentRingColorR * fraction),
+        (uint8_t)(currentRingColorG * fraction),
+        (uint8_t)(currentRingColorB * fraction));
+    }
+  }
+}
+
 // Зажигает кольцо Bass/High: центральная пара (0dB) — зелёная, горит ТОЛЬКО ровно
 // на нуле (с анимацией мигания при входе в зону); остальные светодиоды — тёплый
 // жёлтый, зажигаются в сторону "-" или "+" от центра по модулю значения
@@ -73,26 +134,8 @@ void renderDbRing(Adafruit_NeoPixel &ring, int dbValue, DbRingState &state) {
     uint8_t b = zeroBlinkBrightness(millis() - state.zeroEnterTime);
     ring.setPixelColor(ringCenterPair[0], 0, b, 0);
     ring.setPixelColor(ringCenterPair[1], 0, b, 0);
-  } else if (dbValue > 0) {
-    int litCount = constrain(map(dbValue, 0, 10, 0, 4), 0, 4);
-    for (int i = 0; i < litCount; i++) {
-      // Градиент от нуля к краю: ближний к центру светодиод (i=0) самый тусклый,
-      // крайний (i=3) самый яркий. Зелёной пары это не касается
-      float fraction = (i + 1) / 4.0;
-      ring.setPixelColor(ringPositiveOrder[i],
-        (uint8_t)(currentRingColorR * fraction),
-        (uint8_t)(currentRingColorG * fraction),
-        (uint8_t)(currentRingColorB * fraction));
-    }
   } else {
-    int litCount = constrain(map(-dbValue, 0, 10, 0, 4), 0, 4);
-    for (int i = 0; i < litCount; i++) {
-      float fraction = (i + 1) / 4.0;
-      ring.setPixelColor(ringNegativeOrder[i],
-        (uint8_t)(currentRingColorR * fraction),
-        (uint8_t)(currentRingColorG * fraction),
-        (uint8_t)(currentRingColorB * fraction));
-    }
+    renderDbRingOuterLeds(ring, dbValue);
   }
   ring.show();
 }
