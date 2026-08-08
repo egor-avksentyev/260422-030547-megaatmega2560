@@ -200,6 +200,30 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define LED_HIGH_PIN 41 // Светодиод High
 #define LED_VOLUME_PIN 43 // Светодиод Volume
 
+// Позиция точек-индикаторов текущего пункта меню на экране drawMenu()
+#define MENU_DOTS_PER_ROW 4 // 8 пунктов в один ряд не влезает на 128px экран, поэтому 2 ряда по 4
+#define MENU_DOT_RADIUS 3
+#define MENU_DOT_SPACING_X 20 // Расстояние между точками по горизонтали
+#define MENU_DOT_ROW_SPACING_Y 8 // Расстояние между рядами точек
+#define MENU_DOT_ROW1_Y 50 // Y верхнего ряда точек (нижний ряд — MENU_DOT_ROW1_Y + MENU_DOT_ROW_SPACING_Y)
+#define MENU_DOT_CENTER_WIDTH 148 // Условная ширина для центрирования рядов точек
+#define MENU_DOT_ROW1_X_OFFSET 0 // Доп. сдвиг по X верхнего ряда точек относительно центра
+#define MENU_DOT_ROW2_X_OFFSET 0 // Доп. сдвиг по X нижнего ряда точек относительно центра
+
+// Мелкие текстовые индикаторы состояния (mute/bypass) на экране drawMenu()
+#define STATUS_INDICATOR_FONT u8g2_font_ncenB08_tr
+#define MUTE_INDICATOR_X 100 // Правый верхний угол
+#define MUTE_INDICATOR_Y 10
+#define BYPASS_INDICATOR_X 2 // Левый верхний угол
+#define BYPASS_INDICATOR_Y 10
+
+// Физическая кнопка Bypass (кнопка на GND, INPUT_PULLUP): каждое нажатие переключает
+// Bypass в противоположное состояние (не привязана к физическому положению, а именно
+// к моменту нажатия) — работает независимо от пункта меню "Bypass", синхронизируя то
+// же самое settings[4] через applyBypassState()
+#define BYPASS_BUTTON_PIN 31
+#define BYPASS_LED_PIN 45 // Горит, когда Bypass ВЫКЛЮЧЕН
+
 // Коды команд с пульта
 #define IR_RIGHT 0x79
 #define IR_LEFT 0xF9
@@ -264,6 +288,12 @@ uint8_t zeroBlinkBrightness(unsigned long elapsed);
 void renderDbRing(Adafruit_NeoPixel &ring, int dbValue, DbRingState &state);
 bool dbRingBlinking(const DbRingState &state);
 void applyRingDimmer();
+void applyBypassState();
+void triggerBypassAnim();
+void checkBypassButton();
+void renderBypassFillAnim(Adafruit_NeoPixel &ring, unsigned long elapsed);
+uint8_t bypassBlinkBrightness(unsigned long elapsed);
+void renderBypassBlinkAnim(Adafruit_NeoPixel &ring, unsigned long elapsed);
 
 void IR_ISR() {
   necDecoder.tick();
@@ -541,24 +571,104 @@ void drawDimmerScreen(int percent) {
   u8g2.sendBuffer();
 }
 
+// --- Разовая анимация на кольцах Bass/High при нажатии физической кнопки Bypass ---
+// Bypass выключается: кольцо заливается целиком, шаг за шагом в обе стороны от зелёного
+// центра (как обычная заливка уровня, но досюда всегда до самого края), держим залитым,
+// потом гасим флаг анимации — дальше обычный renderDbRing() сам вернёт как было
+#define BYPASS_FILL_STEP_MS 200 // Задержка между шагами заливки в каждую сторону
+#define BYPASS_FILL_STEPS 4 // По 4 светодиода на каждую сторону (ringNegativeOrder/ringPositiveOrder)
+#define BYPASS_FILL_HOLD_MS 400 // Сколько держим полностью залитое кольцо перед возвратом
+#define BYPASS_FILL_TOTAL_MS (BYPASS_FILL_STEP_MS * BYPASS_FILL_STEPS + BYPASS_FILL_HOLD_MS)
+
+// Bypass включается: только центральная зелёная пара несколько раз "вальяжно" мигает
+// красным (тот же стиль дыхания, что у zeroBlinkBrightness), остальная часть кольца
+// (уровень dB) не трогается
+#define BYPASS_BLINK_PULSE_MS 500 // Длительность одного "вздоха"
+#define BYPASS_BLINK_COUNT 3
+#define BYPASS_BLINK_TOTAL_MS (BYPASS_BLINK_PULSE_MS * BYPASS_BLINK_COUNT)
+#define BYPASS_BLINK_MIN_BRIGHTNESS 15
+
+int bypassAnimMode = 0; // 0 = нет анимации, 1 = заливка (Bypass выключен), 2 = мигание красным (Bypass включён)
+unsigned long bypassAnimStart = 0;
+
+void renderBypassFillAnim(Adafruit_NeoPixel &ring, unsigned long elapsed) {
+  ring.clear();
+  ring.setPixelColor(ringCenterPair[0], 0, 255, 0);
+  ring.setPixelColor(ringCenterPair[1], 0, 255, 0);
+  int stepsLit = constrain((int)(elapsed / BYPASS_FILL_STEP_MS), 0, BYPASS_FILL_STEPS);
+  for (int i = 0; i < stepsLit; i++) {
+    ring.setPixelColor(ringNegativeOrder[i], currentRingColorR, currentRingColorG, currentRingColorB);
+    ring.setPixelColor(ringPositiveOrder[i], currentRingColorR, currentRingColorG, currentRingColorB);
+  }
+  ring.show();
+}
+
+uint8_t bypassBlinkBrightness(unsigned long elapsed) {
+  unsigned long pos = elapsed % BYPASS_BLINK_PULSE_MS;
+  unsigned long half = BYPASS_BLINK_PULSE_MS / 2;
+  if (pos < half) {
+    return map(pos, 0, half, BYPASS_BLINK_MIN_BRIGHTNESS, 255);
+  }
+  return map(pos, half, BYPASS_BLINK_PULSE_MS, 255, BYPASS_BLINK_MIN_BRIGHTNESS);
+}
+
+void renderBypassBlinkAnim(Adafruit_NeoPixel &ring, unsigned long elapsed) {
+  uint8_t b = bypassBlinkBrightness(elapsed);
+  ring.setPixelColor(ringCenterPair[0], b, 0, 0);
+  ring.setPixelColor(ringCenterPair[1], b, 0, 0);
+  ring.show();
+}
+
+// Применяет текущее settings[4] (Bypass) и на реле, и на отдельный индикаторный
+// светодиод (горит, когда Bypass ВЫКЛЮЧЕН) — вызывается и от кнопки, и от пункта меню
+void applyBypassState() {
+  digitalWrite(RELAY_PIN_LED, settings[4] == 1 ? HIGH : LOW);
+  digitalWrite(BYPASS_LED_PIN, settings[4] == 0 ? HIGH : LOW);
+}
+
+// Запускает анимацию колец Bass/High под текущее settings[4] (Bypass) — вызывается
+// и от физической кнопки, и от переключения пункта меню "Bypass" энкодером/пультом,
+// чтобы анимация работала одинаково независимо от источника переключения
+void triggerBypassAnim() {
+  bypassAnimMode = (settings[4] == 0) ? 1 : 2;
+  bypassAnimStart = millis();
+}
+
+// Опрашивает физическую кнопку Bypass. Каждое нажатие (переход в LOW) переключает
+// Bypass в противоположное состояние и запускает соответствующую анимацию колец
+void checkBypassButton() {
+  static int lastState = HIGH;
+  static unsigned long lastChangeTime = 0;
+  int state = digitalRead(BYPASS_BUTTON_PIN);
+  if (state != lastState && millis() - lastChangeTime > 50) { // Простая защита от дребезга контактов
+    lastChangeTime = millis();
+    lastState = state;
+    if (state == LOW) { // Реагируем только на нажатие, не на отпускание
+      settings[4] = (settings[4] == 0) ? 1 : 0;
+      applyBypassState();
+      triggerBypassAnim();
+    }
+  }
+}
+
 void drawMenu() {
   u8g2.setFont(u8g2_font_ncenB18_tf);
   u8g2.clearBuffer();
 
-  // Точки меню в 2 ряда по 4 — 8 в один ряд не влезает на 128px экран
-  const int dotsPerRow = 4;
-  int totalWidth = dotsPerRow * 20;
-  int startX = (148 - totalWidth) / 2; // Вычисление стартовой позиции
+  // Точки меню в 2 ряда по MENU_DOTS_PER_ROW
+  int totalWidth = MENU_DOTS_PER_ROW * MENU_DOT_SPACING_X;
+  int startX = (MENU_DOT_CENTER_WIDTH - totalWidth) / 2; // Вычисление стартовой позиции
 
   for (int i = 0; i < 8; i++) {
-    int row = i / dotsPerRow;
-    int col = i % dotsPerRow;
-    int x = startX + col * 20;
-    int y = 50 + row * 8; // Верхний ряд — 50, нижний — 58
+    int row = i / MENU_DOTS_PER_ROW;
+    int col = i % MENU_DOTS_PER_ROW;
+    int rowXOffset = (row == 0) ? MENU_DOT_ROW1_X_OFFSET : MENU_DOT_ROW2_X_OFFSET;
+    int x = startX + col * MENU_DOT_SPACING_X + rowXOffset;
+    int y = MENU_DOT_ROW1_Y + row * MENU_DOT_ROW_SPACING_Y;
     if (i == currentMenuItem) {
-      u8g2.drawDisc(x, y, 3, U8G2_DRAW_ALL);
+      u8g2.drawDisc(x, y, MENU_DOT_RADIUS, U8G2_DRAW_ALL);
     } else {
-      u8g2.drawCircle(x, y, 3);
+      u8g2.drawCircle(x, y, MENU_DOT_RADIUS);
     }
   }
 
@@ -566,9 +676,15 @@ void drawMenu() {
   u8g2.print(menuItems[currentMenuItem]);
 
   if (isMuted) {
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.setCursor(100, 10);
+    u8g2.setFont(STATUS_INDICATOR_FONT);
+    u8g2.setCursor(MUTE_INDICATOR_X, MUTE_INDICATOR_Y);
     u8g2.print("mute");
+  }
+
+  if (settings[4] == 1) { // Bypass активен
+    u8g2.setFont(STATUS_INDICATOR_FONT);
+    u8g2.setCursor(BYPASS_INDICATOR_X, BYPASS_INDICATOR_Y);
+    u8g2.print("bypass");
   }
 
   u8g2.sendBuffer();
@@ -623,10 +739,12 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
 
   if (isVolume) {
     updateVolumeRing(potValue);
-  } else if (menuItems[currentMenuItem] == "Bass") {
-    renderDbRing(bassRing, potValue, bassRingState);
-  } else if (menuItems[currentMenuItem] == "High") {
-    renderDbRing(highRing, potValue, highRingState);
+  } else if (bypassAnimMode == 0) { // Не перерисовываем кольцо поверх анимации переключения Bypass
+    if (menuItems[currentMenuItem] == "Bass") {
+      renderDbRing(bassRing, potValue, bassRingState);
+    } else if (menuItems[currentMenuItem] == "High") {
+      renderDbRing(highRing, potValue, highRingState);
+    }
   }
   int angleValue = map(potValue, valueMin, valueMax, -120, 120) + 10; // +10° смещение угла стрелки (применяется везде)
 
@@ -712,6 +830,8 @@ void powerOffDevices() {
   digitalWrite(SOURCE_RELAY_1_PIN, LOW); // Гасим все реле источников — взаимоисключающий выбор на паузе
   digitalWrite(SOURCE_RELAY_2_PIN, LOW);
   digitalWrite(SOURCE_RELAY_3_PIN, LOW);
+  digitalWrite(BYPASS_LED_PIN, LOW); // Гасим индикатор Bypass вместе со всем остальным
+  bypassAnimMode = 0; // Прерываем анимацию колец, если она была активна на момент выключения
 
   stopAllMotors();
   delay(100); // Небольшая задержка для гарантированного отключения
@@ -742,7 +862,8 @@ void powerOnDevices() {
   digitalWrite(RELAY_PIN_STANDBY, HIGH); // Включаем Standby
   digitalWrite(RELAY_PIN_VU_METER, HIGH); // Включаем VU Meter
   digitalWrite(RELAY_PIN_MUTE, LOW); // Оставляем Mute выключенным
-  digitalWrite(RELAY_PIN_LED, LOW); // Led выключен по умолчанию
+  settings[4] = 0; // Bypass выключен по умолчанию при каждом включении питания
+  applyBypassState(); // Синхронизирует и реле, и индикаторный светодиод
   applySourceSelection(); // Восстанавливаем выбранный источник из settings[7]
 
   drawMenu(); // Отображаем меню после "POWER ON"
@@ -868,7 +989,8 @@ void handleRemoteInput() {
             if (menuItems[currentMenuItem] == "VU Meter") {
               digitalWrite(RELAY_PIN_VU_METER, HIGH);
             } else if (menuItems[currentMenuItem] == "Bypass") {
-              digitalWrite(RELAY_PIN_LED, HIGH);
+              applyBypassState();
+              triggerBypassAnim();
             }
           } else if (menuItems[currentMenuItem] == "Dimmer") {
             settings[currentMenuItem] = constrain(settings[currentMenuItem] + 5, 0, 100);
@@ -911,7 +1033,8 @@ void handleRemoteInput() {
             if (menuItems[currentMenuItem] == "VU Meter") {
               digitalWrite(RELAY_PIN_VU_METER, LOW);
             } else if (menuItems[currentMenuItem] == "Bypass") {
-              digitalWrite(RELAY_PIN_LED, LOW);
+              applyBypassState();
+              triggerBypassAnim();
             }
           } else if (menuItems[currentMenuItem] == "Dimmer") {
             settings[currentMenuItem] = constrain(settings[currentMenuItem] - 5, 0, 100);
@@ -1045,13 +1168,15 @@ void setup() {
   pinMode(LED_BASS_PIN, OUTPUT);
   pinMode(LED_HIGH_PIN, OUTPUT);
   pinMode(LED_VOLUME_PIN, OUTPUT);
+  pinMode(BYPASS_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(BYPASS_LED_PIN, OUTPUT);
 
   loadSettings(); // Загрузка сохраненных настроек
 
   digitalWrite(RELAY_PIN_STANDBY, HIGH); // Включаем реле Standby
   digitalWrite(RELAY_PIN_VU_METER, HIGH); // Включаем реле VU Meter
   digitalWrite(RELAY_PIN_MUTE, LOW); // Устанавливаем реле Mute в неактивное состояние (низкий уровень для реле высокого уровня)
-  digitalWrite(RELAY_PIN_LED, LOW); // Led выключен по умолчанию
+  applyBypassState(); // Реле Bypass + индикаторный светодиод из settings[4], загруженного из EEPROM
   applySourceSelection(); // Включаем источник из settings[7] по умолчанию
 
   attachInterrupt(digitalPinToInterrupt(IR_PIN), IR_ISR, FALLING);
@@ -1074,6 +1199,7 @@ void loop() {
   }
 
   checkEncoderButton();
+  checkBypassButton();
 
   if (encoderValue != 0) {
     if (!inSettingsMode) {
@@ -1097,7 +1223,8 @@ void loop() {
           if (menuItems[currentMenuItem] == "VU Meter") {
             digitalWrite(RELAY_PIN_VU_METER, HIGH); // Включаем реле (высокий уровень для реле высокого уровня)
           } else if (menuItems[currentMenuItem] == "Bypass") {
-            digitalWrite(RELAY_PIN_LED, HIGH);
+            applyBypassState();
+            triggerBypassAnim();
           }
         } else if (encoderValue < -2) { // Добавляем холостой ход в 2 шага
           settings[currentMenuItem] = 0; // Выключаем режим OFF
@@ -1106,7 +1233,8 @@ void loop() {
           if (menuItems[currentMenuItem] == "VU Meter") {
             digitalWrite(RELAY_PIN_VU_METER, LOW); // Выключаем реле (низкий уровень для реле высокого уровня)
           } else if (menuItems[currentMenuItem] == "Bypass") {
-            digitalWrite(RELAY_PIN_LED, LOW);
+            applyBypassState();
+            triggerBypassAnim();
           }
         }
       } else {
@@ -1165,20 +1293,24 @@ void loop() {
     digitalWrite(LED_VOLUME_PIN, HIGH);
   }
 
-  // Кольца Bass/High/Volume светятся всегда (не только внутри своих пунктов меню), пока система не в Standby
+  // Кольца Bass/High/Volume светятся всегда (не только внутри своих пунктов меню), пока система не в Standby.
+  // Bass/High пропускаются, пока играет разовая анимация переключения Bypass (см. блок ниже) —
+  // она сама берёт на себя отображение этих двух колец, пока активна
   static unsigned long lastRingUpdate = 0;
   if (!powerOff && millis() - lastRingUpdate >= 200) {
     lastRingUpdate = millis();
     updateVolumeRing(readVolumePotPercent());
-    renderDbRing(bassRing, readBassPotPercent(), bassRingState);
-    renderDbRing(highRing, readHighPotPercent(), highRingState);
+    if (bypassAnimMode == 0) {
+      renderDbRing(bassRing, readBassPotPercent(), bassRingState);
+      renderDbRing(highRing, readHighPotPercent(), highRingState);
+    }
   }
 
   // Во время анимации мигания (возврат в 0dB) кольцу нужно обновляться чаще для
   // плавности — но ТОЛЬКО пока анимация активна, и без перечтения потенциометра
   // (дёшево: просто пересчёт яркости уже известного значения + show())
   static unsigned long lastBlinkRender = 0;
-  if (!powerOff && millis() - lastBlinkRender >= 30) {
+  if (!powerOff && bypassAnimMode == 0 && millis() - lastBlinkRender >= 30) {
     if (dbRingBlinking(bassRingState)) {
       renderDbRing(bassRing, bassRingState.lastValue, bassRingState);
     }
@@ -1186,6 +1318,30 @@ void loop() {
       renderDbRing(highRing, highRingState.lastValue, highRingState);
     }
     lastBlinkRender = millis();
+  }
+
+  // Разовая анимация переключения Bypass кнопкой — заливка кольца (Bypass выключен)
+  // или мигание зелёной пары красным (Bypass включён), см. checkBypassButton().
+  // Обновляется чаще (30мс) для плавности, пока активна; когда завершится — просто
+  // гасим флаг, и предыдущий блок сам вернёт обычное отображение уровня дБ
+  if (!powerOff && bypassAnimMode != 0) {
+    unsigned long elapsed = millis() - bypassAnimStart;
+    unsigned long totalMs = (bypassAnimMode == 1) ? BYPASS_FILL_TOTAL_MS : BYPASS_BLINK_TOTAL_MS;
+    if (elapsed >= totalMs) {
+      bypassAnimMode = 0;
+    } else {
+      static unsigned long lastBypassAnimRender = 0;
+      if (millis() - lastBypassAnimRender >= 30) {
+        lastBypassAnimRender = millis();
+        if (bypassAnimMode == 1) {
+          renderBypassFillAnim(bassRing, elapsed);
+          renderBypassFillAnim(highRing, elapsed);
+        } else {
+          renderBypassBlinkAnim(bassRing, elapsed);
+          renderBypassBlinkAnim(highRing, elapsed);
+        }
+      }
+    }
   }
 
   // Моторы Bass/High/Volume мгновенно останавливаются, если давно не было новых команд от энкодера/пульта
