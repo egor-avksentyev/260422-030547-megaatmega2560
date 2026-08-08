@@ -2,6 +2,7 @@
 #include "hardware_settings.h"
 #include "main.h"
 #include "animation_logic.h"
+#include "display_logic.h"
 
 // Применяет settings[] для пункта "Source" (0-2): включает ровно одно из трёх реле,
 // остальные два принудительно гасит — переключение источников взаимоисключающее
@@ -32,6 +33,14 @@ void checkBypassButton() {
       settings[4] = (settings[4] == 0) ? 1 : 0;
       applyBypassState();
       triggerBypassAnim();
+      // Перерисовываем экран, чтобы кнопка отражалась независимо от того, что на
+      // экране в момент нажатия: надпись "bypass" в карусели меню или toggle switch
+      // на экране настроек самого пункта "Bypass"
+      if (inSettingsMode && menuItems[currentMenuItem] == "Bypass") {
+        drawToggleSwitch(settings[4] == 1);
+      } else if (!inSettingsMode) {
+        drawMenu();
+      }
     }
   }
 }

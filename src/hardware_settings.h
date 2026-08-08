@@ -245,15 +245,20 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define SOURCE_VALUE_X 15
 #define SOURCE_VALUE_Y 45
 
+// --- Название текущего пункта меню (крупный текст по центру) на экране drawMenu() ---
+#define MENU_TITLE_FONT u8g2_font_ncenB14_tf
+#define MENU_TITLE_Y 32
+#define MENU_TITLE_X_OFFSET 0 // Доп. сдвиг по X относительно центра (ширина текста разная у каждого пункта, поэтому X всегда считается заново)
+
 // --- Точки-индикаторы текущего пункта меню на экране drawMenu() ---
 #define MENU_DOTS_PER_ROW 4 // 8 пунктов в один ряд не влезает на 128px экран, поэтому 2 ряда по 4
-#define MENU_DOT_RADIUS 3
+#define MENU_DOT_RADIUS 2
 #define MENU_DOT_SPACING_X 20 // Расстояние между точками по горизонтали
 #define MENU_DOT_ROW_SPACING_Y 8 // Расстояние между рядами точек
 #define MENU_DOT_ROW1_Y 50 // Y верхнего ряда точек (нижний ряд — MENU_DOT_ROW1_Y + MENU_DOT_ROW_SPACING_Y)
 #define MENU_DOT_CENTER_WIDTH 148 // Условная ширина для центрирования рядов точек
-#define MENU_DOT_ROW1_X_OFFSET 0 // Доп. сдвиг по X верхнего ряда точек относительно центра
-#define MENU_DOT_ROW2_X_OFFSET 0 // Доп. сдвиг по X нижнего ряда точек относительно центра
+#define MENU_DOT_ROW1_X_OFFSET -21 // Доп. сдвиг по X верхнего ряда точек относительно центра
+#define MENU_DOT_ROW2_X_OFFSET +10 // Доп. сдвиг по X нижнего ряда точек относительно центра
 
 // --- Мелкие текстовые индикаторы состояния (mute/bypass) на экране drawMenu() ---
 #define STATUS_INDICATOR_FONT u8g2_font_ncenB08_tr

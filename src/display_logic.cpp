@@ -8,7 +8,7 @@
 U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
 
 void drawMenu() {
-  u8g2.setFont(u8g2_font_ncenB18_tf);
+  u8g2.setFont(MENU_TITLE_FONT);
   u8g2.clearBuffer();
 
   // Точки меню в 2 ряда по MENU_DOTS_PER_ROW
@@ -28,7 +28,7 @@ void drawMenu() {
     }
   }
 
-  u8g2.setCursor((128 - u8g2.getStrWidth(menuItems[currentMenuItem].c_str())) / 2, 32);
+  u8g2.setCursor((128 - u8g2.getStrWidth(menuItems[currentMenuItem].c_str())) / 2 + MENU_TITLE_X_OFFSET, MENU_TITLE_Y);
   u8g2.print(menuItems[currentMenuItem]);
 
   if (isMuted) {
