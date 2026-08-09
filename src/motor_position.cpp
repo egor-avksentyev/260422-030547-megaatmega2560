@@ -40,11 +40,23 @@ int readPotPercent(int pin, const int calRaw[], const int calPercent[], int calP
 }
 
 int readBassPotPercent(int* rawOut) {
-  return readPotPercent(BASS_POT_PIN, bassPotCalRaw, bassPotCalValue, bassPotCalPoints, rawOut, BASS_POT_ZERO_SNAP_RAW, BASS_POT_MIN_SNAP_RAW, BASS_POT_MAX_SNAP_RAW);
+  // Гистерезис вокруг 0dB (см. BASS_POT_ZERO_EXIT_SNAP_RAW) — только для возвращаемого
+  // (отображаемого) значения; rawOut отдаёт настоящее сырое значение без изменений,
+  // на него завязан точный автовозврат мотора (motor_driver_logic.cpp), которому
+  // гистерезис дисплея не нужен и мог бы помешать
+  static bool wasAtZero = false;
+  int zeroSnap = wasAtZero ? BASS_POT_ZERO_EXIT_SNAP_RAW : BASS_POT_ZERO_SNAP_RAW;
+  int percent = readPotPercent(BASS_POT_PIN, bassPotCalRaw, bassPotCalValue, bassPotCalPoints, rawOut, zeroSnap, BASS_POT_MIN_SNAP_RAW, BASS_POT_MAX_SNAP_RAW);
+  wasAtZero = (percent == 0);
+  return percent;
 }
 
 int readHighPotPercent(int* rawOut) {
-  return readPotPercent(HIGH_POT_PIN, highPotCalRaw, highPotCalValue, highPotCalPoints, rawOut, HIGH_POT_ZERO_SNAP_RAW, HIGH_POT_MIN_SNAP_RAW, HIGH_POT_MAX_SNAP_RAW);
+  static bool wasAtZero = false;
+  int zeroSnap = wasAtZero ? HIGH_POT_ZERO_EXIT_SNAP_RAW : HIGH_POT_ZERO_SNAP_RAW;
+  int percent = readPotPercent(HIGH_POT_PIN, highPotCalRaw, highPotCalValue, highPotCalPoints, rawOut, zeroSnap, HIGH_POT_MIN_SNAP_RAW, HIGH_POT_MAX_SNAP_RAW);
+  wasAtZero = (percent == 0);
+  return percent;
 }
 
 int readVolumePotPercent(int* rawOut) {
