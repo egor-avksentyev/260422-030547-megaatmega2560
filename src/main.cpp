@@ -124,7 +124,8 @@ void loop() {
   checkBypassButton();
 
   if (!powerOff) {
-    updateBassHighRecenter(); // Автовозврат Bass/High в 0dB после переключения Bypass
+    updateBassHighRecenter(); // Автовозврат Bass/High в 0dB после переключения Bypass (или к сохранённому положению после включения питания)
+    updateVolumeSeek(); // Автовозврат Volume к VOLUME_POWERON_TARGET_PERCENT после включения питания
   }
 
   if (encoderValue != 0) {
@@ -182,6 +183,7 @@ void loop() {
           encoderValue = 0;
           drawArrowIndicator(0, showArrowRight, showArrowLeft);
         } else if (menuItems[currentMenuItem] == "Volume") {
+          cancelVolumeSeek(); // Ручное управление энкодером отменяет автовозврат к целевой громкости после включения питания
           motorControl2(direction * SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
           lastMotorInputTime = millis();
           encoderValue = 0;

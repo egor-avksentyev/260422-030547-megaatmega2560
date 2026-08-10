@@ -3,6 +3,7 @@
 #include "neopixel.h"
 #include "main.h"
 #include "motor_driver_logic.h"
+#include "on_off_logic.h"
 
 int bypassAnimMode = 0;
 unsigned long bypassAnimStart = 0;
@@ -16,6 +17,9 @@ void triggerBypassAnim() {
   bypassAnimMode = (settings[4] == 0) ? 1 : 2;
   bypassAnimStart = millis();
   requestBassHighRecenter();
+  if (settings[4] == 1) { // Bypass только что включили — сохранённое в EEPROM положение больше не актуально
+    clearSavedBassHighPosition();
+  }
 }
 
 // Разовая анимация заливки (Bypass выключается) — не привязана к реальному значению,

@@ -128,7 +128,23 @@ void handleRemoteInput() {
         Serial.println("Mute button pressed"); // Отладочный вывод
         isMuted = !isMuted; // Переключаем состояние Mute
         digitalWrite(RELAY_PIN_MUTE, isMuted ? HIGH : LOW); // Управляем реле Mute
-        drawMenu(); // Перерисовываем меню для отображения/удаления надписи Mute
+        // Надпись "mute" теперь рисуется на всех экранах (см. drawStatusIndicators() в
+        // display_logic.cpp) — перерисовываем ТЕКУЩИЙ экран (не всегда drawMenu(), иначе
+        // это скачок в карусель меню и обратно), чтобы подтверждение было видно сразу же,
+        // а не после следующего случайного перерисовывания
+        if (!inSettingsMode) {
+          drawMenu();
+        } else if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
+          drawToggleSwitch(settings[currentMenuItem] == 1);
+        } else if (menuItems[currentMenuItem] == "Dimmer") {
+          drawDimmerScreen(settings[currentMenuItem]);
+        } else if (menuItems[currentMenuItem] == "Color") {
+          drawColorScreen(settings[currentMenuItem]);
+        } else if (menuItems[currentMenuItem] == "Source") {
+          drawSourceScreen(settings[currentMenuItem]);
+        } else {
+          drawArrowIndicator(settings[currentMenuItem], false, false);
+        }
         break;
       case IR_UP: // Двигает мотор, пока держишь — repeat-кадры разрешены выше, а
                   // останавливает существующий таймаут простоя в main.cpp (SLIDER_MOTOR_IDLE_TIMEOUT),
@@ -145,6 +161,7 @@ void handleRemoteInput() {
             lastMotorInputTime = millis();
             drawArrowIndicator(0, true, false);
           } else if (menuItems[currentMenuItem] == "Volume") {
+            cancelVolumeSeek(); // Ручное управление пультом отменяет автовозврат к целевой громкости после включения питания
             motorControl2(SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
             lastMotorInputTime = millis();
             drawArrowIndicator(0, true, false);
@@ -164,6 +181,7 @@ void handleRemoteInput() {
             lastMotorInputTime = millis();
             drawArrowIndicator(0, false, true);
           } else if (menuItems[currentMenuItem] == "Volume") {
+            cancelVolumeSeek();
             motorControl2(-SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
             lastMotorInputTime = millis();
             drawArrowIndicator(0, false, true);
@@ -187,11 +205,13 @@ void handleRemoteInput() {
             digitalWrite(LED_BASS_PIN, LOW);
             digitalWrite(LED_HIGH_PIN, LOW);
             digitalWrite(LED_VOLUME_PIN, LOW);
-            stopAllMotors();
+            saveBypassStateOnShutdown(); // Восстанавливается при следующем включении, независимо от значения
+            saveBassHighPositionOnShutdown(); // Пока моторы ещё не сдвинуты — иначе тут же перезапишет 0dB/0%
+            seekBassHighVolumeToZeroBlocking(); // Сначала все моторы едут в ноль...
             delay(100); // Небольшая задержка для гарантированного отключения
             powerOffScreen();
             delay(3000); // 3 секунды для отображения "POWER OFF"
-            powerOffDevices();
+            powerOffDevices(); // ...и только потом обесточивается система
             powerOff = true;
           }
         }
