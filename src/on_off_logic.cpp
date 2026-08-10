@@ -6,20 +6,25 @@
 #include "relay.h"
 #include "motor_driver_logic.h"
 #include "animation_logic.h"
+#include "boot_animation.h"
 
 bool powerOff = false; // Флаг для состояния питания
-unsigned long powerButtonPressStartTime = 0; // Время начала нажатия кнопки питания
-bool powerButtonPressing = false; // Флаг для состояния удержания кнопки питания
 
 void powerOffScreen() {
-  displayMessage("POWER OFF");
+  playBootAnimation();
 }
 
 void powerOnScreen() {
-  displayMessage("POWER ON");
+  playBootAnimation();
 }
 
 void powerOffDevices() {
+  // Принудительно выходим из режима настроек — иначе если выключили питание, пока был
+  // открыт экран Bass/High/Volume, main.cpp продолжает каждые 200мс перерисовывать
+  // кольцо этого пункта (тот блок не проверяет powerOff) и оно зажигается заново
+  inSettingsMode = false;
+  resetCursor();
+
   // Явно гасим светодиоды (LOW = выключено)
   pinMode(LED_BASS_PIN, OUTPUT);
   pinMode(LED_HIGH_PIN, OUTPUT);

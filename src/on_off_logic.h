@@ -8,8 +8,6 @@
 // ============================================================================
 
 extern bool powerOff;
-extern unsigned long powerButtonPressStartTime;
-extern bool powerButtonPressing;
 
 void powerOffScreen();
 void powerOnScreen();

@@ -15,6 +15,13 @@
 #define DISPLAY_DC_PIN 9
 #define DISPLAY_RESET_PIN 12
 
+// --- Анимация включения/выключения (boot_animation.cpp) — играет при физическом
+// включении питания (setup()) и при программном Power On/Off (on_off_logic.cpp) ---
+#define BOOT_ANIMATION_FRAME_DELAY_MS 42 // Задержка между кадрами
+#define BOOT_ANIMATION_DURATION_MS 4000 // Общая длительность — кадры зацикливаются, пока не наберётся это время
+#define BOOT_ANIMATION_X 40 // Левый верхний угол кадра (кадр 48x48, по центру экрана 128x64)
+#define BOOT_ANIMATION_Y 8
+
 // --- Энкодер и его кнопка ---
 #define ENCODER_A_PIN 18 // INT5 — обязательно пин с аппаратным прерыванием (алгоритм Мазурова)
 #define ENCODER_B_PIN 20 // INT3 — обязательно пин с аппаратным прерыванием (алгоритм Мазурова)
@@ -38,7 +45,12 @@
 #define MOTOR3_PWM1 2
 #define MOTOR3_PWM2 4
 #define SLIDER_MOTOR_SPEED 40 // Фиксированная скорость моторов Bass/High/Volume при вращении энкодера/пульта (диапазон -50..50)
-#define SLIDER_MOTOR_IDLE_TIMEOUT 120 // мс без новых команд от энкодера/пульта — мотор мгновенно останавливается
+#define SLIDER_MOTOR_IDLE_TIMEOUT 260 // мс без новых команд от энкодера/пульта — мотор мгновенно останавливается.
+// Пульт (RC5) при зажатой кнопке шлёт повторные кадры раз в ~114мс. Таймаут должен
+// переживать не только обычный джиттер, но и изредка целиком потерянный кадр (наводка от
+// самих моторов, задержка ИК-приёма во время NeoPixel.show() и т.п.) — иначе один пропущенный
+// кадр (гэп ~228мс) всё равно даёт заметный завтык. Было 120мс, потом 200мс — оба случая
+// укладывались в 1 период без запаса на пропуск.
 // Допуск в raw-отсчётах для автовозврата Bass/High к 0dB после Bypass (см. motor_driver_logic.cpp).
 // Специально уже, чем BASS_POT_ZERO_SNAP_RAW/HIGH_POT_ZERO_SNAP_RAW — снап нужен только для
 // чистого отображения "0dB" на экране, а моторное автовозвращение должно доводить ручку до
@@ -62,13 +74,21 @@
 #define SOURCE_RELAY_3_PIN 46
 #define SOURCE_COUNT 3
 
-// --- ИК-приёмник и коды команд с пульта ---
+// --- ИК-приёмник и коды команд пульта. Читаются через IRremote. После
+// переобучения пульт шлёт все кнопки одним протоколом RC5, Address=0x18 —
+// сюда записан только Command, коллизий между значениями нет
+// (полная таблица — IR_REMOTE_CODES.md) ---
 #define IR_PIN 19
-#define IR_RIGHT 0x79
-#define IR_LEFT 0xF9
-#define IR_ENTER 0x7B
-#define IR_MUTE 0x38
-#define IR_POWER 0xB9
+#define IR_PROTOCOL RC5 // Проверяется в remote_control.cpp, чтобы наводка (например от моторов),
+// случайно задекодированная в другой протокол, не спутывалась с реальной кнопкой
+#define IR_ADDRESS 0x18
+#define IR_RIGHT 0x4 // RC5, Address=0x18
+#define IR_LEFT 0x6 // RC5, Address=0x18
+#define IR_ENTER 0x0 // RC5, Address=0x18
+#define IR_MUTE 0x2 // RC5, Address=0x18
+#define IR_POWER 0x1 // RC5, Address=0x18
+#define IR_UP 0x1D // RC5, Address=0x18 — двигает мотор Bass/High/Volume, пока держишь
+#define IR_DOWN 0x8 // RC5, Address=0x18 — двигает мотор Bass/High/Volume, пока держишь
 
 // --- Светодиоды пунктов меню Bass/High/Volume ---
 #define LED_BASS_PIN 39

@@ -8,26 +8,33 @@
 #include "motor_driver_logic.h"
 #include "on_off_logic.h"
 #include "encoder.h"
+#include <IRremote.hpp>
 
-NecDecoder necDecoder; // Создаем объект для декодирования сигналов пульта
-
-volatile bool irReceived = false;
-volatile uint8_t irCommand = 0;
-
-void IR_ISR() {
-  necDecoder.tick();
-  if (necDecoder.available()) {
-    irCommand = necDecoder.readCommand();
-    irReceived = true;
-  }
+void initRemoteControl() {
+  IrReceiver.begin(IR_PIN, ENABLE_LED_FEEDBACK);
 }
 
 void handleRemoteInput() {
-  if (irReceived) {
-    irReceived = false; // Сброс флага
+  if (IrReceiver.decode()) {
+    if (IrReceiver.decodedIRData.protocol != IR_PROTOCOL || IrReceiver.decodedIRData.address != IR_ADDRESS) {
+      // Не наш пульт: либо чистый шум (Protocol=UNKNOWN), либо наводка (например от моторов),
+      // случайно похожая на валидный кадр другого протокола/адреса — реальная кнопка всегда
+      // приходит как IR_PROTOCOL с Address=IR_ADDRESS
+      IrReceiver.resume();
+      return;
+    }
 
-    Serial.print("Received IR command: 0x");
-    Serial.println(irCommand, HEX); // Отладочный вывод
+    bool isRepeat = IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT;
+    uint16_t irCommand = IrReceiver.decodedIRData.command;
+    IrReceiver.resume(); // Можно принимать следующий кадр — irCommand уже сохранён
+
+    // Долгое нажатие шлёт кучу repeat-кадров подряд, пока держишь кнопку — для
+    // одноразовых действий (навигация и т.п.) это не новая команда, гасим. Но для
+    // Power они нужны, чтобы отслеживать длительность удержания (см. case IR_POWER),
+    // а для Up/Down — чтобы мотор двигался непрерывно, пока держишь кнопку (см. ниже)
+    if (isRepeat && irCommand != IR_POWER && irCommand != IR_UP && irCommand != IR_DOWN) {
+      return;
+    }
 
     switch (irCommand) {
       case IR_RIGHT:
@@ -59,20 +66,6 @@ void handleRemoteInput() {
             settings[currentMenuItem] = (settings[currentMenuItem] + 1) % SOURCE_COUNT;
             applySourceSelection();
             drawSourceScreen(settings[currentMenuItem]);
-          } else if (menuItems[currentMenuItem] == "Bass") {
-            cancelBassRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
-            motorControl(SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
-            lastMotorInputTime = millis();
-            drawArrowIndicator(0, true, false);
-          } else if (menuItems[currentMenuItem] == "High") {
-            cancelHighRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
-            motorControl(SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
-            lastMotorInputTime = millis();
-            drawArrowIndicator(0, true, false);
-          } else if (menuItems[currentMenuItem] == "Volume") {
-            motorControl2(SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
-            lastMotorInputTime = millis();
-            drawArrowIndicator(0, true, false);
           }
         }
         break;
@@ -105,20 +98,6 @@ void handleRemoteInput() {
             settings[currentMenuItem] = (settings[currentMenuItem] - 1 + SOURCE_COUNT) % SOURCE_COUNT;
             applySourceSelection();
             drawSourceScreen(settings[currentMenuItem]);
-          } else if (menuItems[currentMenuItem] == "Bass") {
-            cancelBassRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
-            motorControl(-SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
-            lastMotorInputTime = millis();
-            drawArrowIndicator(0, false, true);
-          } else if (menuItems[currentMenuItem] == "High") {
-            cancelHighRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
-            motorControl(-SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
-            lastMotorInputTime = millis();
-            drawArrowIndicator(0, false, true);
-          } else if (menuItems[currentMenuItem] == "Volume") {
-            motorControl2(-SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
-            lastMotorInputTime = millis();
-            drawArrowIndicator(0, false, true);
           }
         }
         break;
@@ -151,13 +130,55 @@ void handleRemoteInput() {
         digitalWrite(RELAY_PIN_MUTE, isMuted ? HIGH : LOW); // Управляем реле Mute
         drawMenu(); // Перерисовываем меню для отображения/удаления надписи Mute
         break;
-      case IR_POWER:
-        if (!powerButtonPressing) {
-          powerButtonPressing = true;
-          powerButtonPressStartTime = millis();
-        } else if (millis() - powerButtonPressStartTime >= 3000) {
-          // Длительное нажатие кнопки питания (3 секунды)
-          Serial.println("Power button long press"); // Отладочный вывод
+      case IR_UP: // Двигает мотор, пока держишь — repeat-кадры разрешены выше, а
+                  // останавливает существующий таймаут простоя в main.cpp (SLIDER_MOTOR_IDLE_TIMEOUT),
+                  // когда новые кадры перестают приходить (кнопку отпустили)
+        if (inSettingsMode) {
+          if (menuItems[currentMenuItem] == "Bass") {
+            cancelBassRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
+            motorControl(SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
+            lastMotorInputTime = millis();
+            drawArrowIndicator(0, true, false);
+          } else if (menuItems[currentMenuItem] == "High") {
+            cancelHighRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
+            motorControl(SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
+            lastMotorInputTime = millis();
+            drawArrowIndicator(0, true, false);
+          } else if (menuItems[currentMenuItem] == "Volume") {
+            motorControl2(SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
+            lastMotorInputTime = millis();
+            drawArrowIndicator(0, true, false);
+          }
+        }
+        break;
+      case IR_DOWN: // Симметрично IR_UP, в другую сторону
+        if (inSettingsMode) {
+          if (menuItems[currentMenuItem] == "Bass") {
+            cancelBassRecenter();
+            motorControl(-SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
+            lastMotorInputTime = millis();
+            drawArrowIndicator(0, false, true);
+          } else if (menuItems[currentMenuItem] == "High") {
+            cancelHighRecenter();
+            motorControl(-SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
+            lastMotorInputTime = millis();
+            drawArrowIndicator(0, false, true);
+          } else if (menuItems[currentMenuItem] == "Volume") {
+            motorControl2(-SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
+            lastMotorInputTime = millis();
+            drawArrowIndicator(0, false, true);
+          }
+        }
+        break;
+      case IR_POWER: {
+        // Одно нажатие — сразу, без удержания. Игнорируем repeat-кадры, иначе удержание
+        // кнопки будет непрерывно включать/выключать обратно. Отдельно от repeat: изредка
+        // пульт/наводка шлёт по одному нажатию два самостоятельных (не repeat-) кадра —
+        // без доп. защиты это включает и тут же снова выключает, выглядит как "не сработало".
+        static unsigned long lastPowerActionTime = 0;
+        if (!isRepeat && millis() - lastPowerActionTime > 800) {
+          lastPowerActionTime = millis();
+          Serial.println("Power button pressed"); // Отладочный вывод
           if (powerOff) {
             powerOnDevices();
             powerOff = false;
@@ -173,9 +194,9 @@ void handleRemoteInput() {
             powerOffDevices();
             powerOff = true;
           }
-          powerButtonPressing = false;
         }
         break;
+      }
       default:
         Serial.println("Unknown button pressed"); // Отладочный вывод
         break;
