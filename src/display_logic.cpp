@@ -7,6 +7,23 @@
 
 U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
 
+// Надписи "mute"/"bypass" в углах экрана — нужны на ВСЕХ экранах (не только карусели
+// меню), иначе при переключении Mute/Bypass из настроек конкретного пункта не видно
+// подтверждения, что оно сработало (drawMenu() туда специально не вызывается — это
+// вызывало скачок экрана в карусель и обратно)
+static void drawStatusIndicators() {
+  if (isMuted) {
+    u8g2.setFont(STATUS_INDICATOR_FONT);
+    u8g2.setCursor(MUTE_INDICATOR_X, MUTE_INDICATOR_Y);
+    u8g2.print("mute");
+  }
+  if (settings[4] == 1) { // Bypass активен
+    u8g2.setFont(STATUS_INDICATOR_FONT);
+    u8g2.setCursor(BYPASS_INDICATOR_X, BYPASS_INDICATOR_Y);
+    u8g2.print("bypass");
+  }
+}
+
 void drawMenu() {
   u8g2.setFont(MENU_TITLE_FONT);
   u8g2.clearBuffer();
@@ -31,17 +48,7 @@ void drawMenu() {
   u8g2.setCursor((128 - u8g2.getStrWidth(menuItems[currentMenuItem].c_str())) / 2 + MENU_TITLE_X_OFFSET, MENU_TITLE_Y);
   u8g2.print(menuItems[currentMenuItem]);
 
-  if (isMuted) {
-    u8g2.setFont(STATUS_INDICATOR_FONT);
-    u8g2.setCursor(MUTE_INDICATOR_X, MUTE_INDICATOR_Y);
-    u8g2.print("mute");
-  }
-
-  if (settings[4] == 1) { // Bypass активен
-    u8g2.setFont(STATUS_INDICATOR_FONT);
-    u8g2.setCursor(BYPASS_INDICATOR_X, BYPASS_INDICATOR_Y);
-    u8g2.print("bypass");
-  }
+  drawStatusIndicators();
 
   u8g2.sendBuffer();
 }
@@ -67,6 +74,8 @@ void drawToggleSwitch(bool state) {
     u8g2.setCursor(x - 35, y + 15);
     u8g2.print("Off");
   }
+
+  drawStatusIndicators();
 
   u8g2.sendBuffer();
 }
@@ -144,6 +153,8 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
   u8g2.print(potValue);
   u8g2.print(unit);
 
+  drawStatusIndicators();
+
   u8g2.sendBuffer();
 }
 
@@ -159,6 +170,8 @@ void drawDimmerScreen(int percent) {
   u8g2.print(percent);
   u8g2.print("%");
 
+  drawStatusIndicators();
+
   u8g2.sendBuffer();
 }
 
@@ -173,6 +186,8 @@ void drawColorScreen(int colorIndex) {
   u8g2.setCursor(COLOR_VALUE_X, COLOR_VALUE_Y);
   u8g2.print(ringColorPalette[colorIndex].name);
 
+  drawStatusIndicators();
+
   u8g2.sendBuffer();
 }
 
@@ -186,6 +201,8 @@ void drawSourceScreen(int sourceIndex) {
   u8g2.setFont(SOURCE_VALUE_FONT);
   u8g2.setCursor(SOURCE_VALUE_X, SOURCE_VALUE_Y);
   u8g2.print(sourceIndex + 1);
+
+  drawStatusIndicators();
 
   u8g2.sendBuffer();
 }
