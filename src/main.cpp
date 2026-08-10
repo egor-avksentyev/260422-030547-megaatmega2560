@@ -16,6 +16,7 @@
 #include "encoder.h"
 #include "remote_control.h"
 #include "on_off_logic.h"
+#include "boot_animation.h"
 
 String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source"};
 int currentMenuItem = 0;
@@ -55,6 +56,7 @@ void setup() {
   Serial.println("Starting setup...");
 
   u8g2.begin();
+  playBootAnimation(); // Показываем сразу после физического включения (просто воткнули кабель)
   volumeRing.begin();
   bassRing.begin();
   highRing.begin();
@@ -87,7 +89,6 @@ void setup() {
   pinMode(SOURCE_RELAY_1_PIN, OUTPUT);
   pinMode(SOURCE_RELAY_2_PIN, OUTPUT);
   pinMode(SOURCE_RELAY_3_PIN, OUTPUT);
-  pinMode(IR_PIN, INPUT);
   pinMode(LED_BASS_PIN, OUTPUT);
   pinMode(LED_HIGH_PIN, OUTPUT);
   pinMode(LED_VOLUME_PIN, OUTPUT);
@@ -102,7 +103,7 @@ void setup() {
   applyBypassState(); // Реле Bypass + индикаторный светодиод из settings[4], загруженного из EEPROM
   applySourceSelection(); // Включаем источник из settings[7] по умолчанию
 
-  attachInterrupt(digitalPinToInterrupt(IR_PIN), IR_ISR, FALLING);
+  initRemoteControl();
   attachInterrupt(digitalPinToInterrupt(ENCODER_A_PIN), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCODER_B_PIN), encoderISR, CHANGE);
 
@@ -117,9 +118,7 @@ void setup() {
 }
 
 void loop() {
-  if (irReceived) { // Проверка сигнала с ИК-пульта
-    handleRemoteInput(); // Обработка входных данных с пульта
-  }
+  handleRemoteInput(); // Проверяет сигнал с ИК-пульта сама (IrReceiver.decode())
 
   checkEncoderButton();
   checkBypassButton();
@@ -233,6 +232,10 @@ void loop() {
       renderDbRing(bassRing, readBassPotPercent(), bassRingState);
       renderDbRing(highRing, readHighPotPercent(), highRingState);
     }
+    // IRremote игнорирует новый сигнал, пока явно не вызван resume() (внутри
+    // handleRemoteInput()) — этот блок с усреднением потенциометров занимает заметное
+    // время (до ~15-20мс), проверяем пульт сразу после, а не только в начале loop()
+    handleRemoteInput();
   }
 
   // Во время анимации мигания (возврат в 0dB, дыхание Volume выше середины шкалы)
@@ -300,5 +303,6 @@ void loop() {
       millis() - lastPotUpdate >= 200) {
     lastPotUpdate = millis();
     drawArrowIndicator(0, false, false);
+    handleRemoteInput(); // См. комментарий у блока обновления колец выше
   }
 }
