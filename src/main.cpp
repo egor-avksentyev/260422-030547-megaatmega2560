@@ -16,7 +16,14 @@
 #include "encoder.h"
 #include "remote_control.h"
 #include "on_off_logic.h"
-#include "boot_animation.h"
+#include "animations/boot_animation.h"
+#include "animations/bass_volume_high_animation.h"
+#include "animations/mute_animation.h"
+#include "animations/vu_meter_animation.h"
+#include "animations/bypass_animation.h"
+#include "animations/dimmer_animation.h"
+#include "animations/color_animation.h"
+#include "animations/source_animation.h"
 
 String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source"};
 int currentMenuItem = 0;
@@ -24,6 +31,93 @@ int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT,
 bool inSettingsMode = false;
 bool isMuted = false; // Флаг для состояния Mute
 unsigned long lastMotorInputTime = 0; // Момент последней команды на мотор Bass/High/Volume (для авто-стопа)
+
+bool volumeOverlayActive = false;
+static int volumeOverlaySavedMenuItem = 0;
+static bool volumeOverlaySavedInSettingsMode = false;
+
+static int volumeMenuIndex() {
+  for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    if (menuItems[i] == "Volume") {
+      return i;
+    }
+  }
+  return 0; // Не должно случаться — "Volume" всегда есть в menuItems[]
+}
+
+// Перерисовывает экран, который сейчас должен быть виден по inSettingsMode/currentMenuItem —
+// нужно, чтобы после отпускания Up/Down (глобальный шорткат громкости, см. beginVolumeOverlay())
+// вернуть на экран именно то, что было до него (карусель или конкретный экран настройки)
+void redrawCurrentScreen() {
+  if (!inSettingsMode) {
+    drawMenu();
+  } else if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
+    drawToggleSwitch(settings[currentMenuItem] == 1);
+  } else if (menuItems[currentMenuItem] == "Dimmer") {
+    drawDimmerScreen(settings[currentMenuItem]);
+  } else if (menuItems[currentMenuItem] == "Color") {
+    drawColorScreen(settings[currentMenuItem]);
+  } else if (menuItems[currentMenuItem] == "Source") {
+    drawSourceScreen(settings[currentMenuItem]);
+  } else {
+    drawArrowIndicator(settings[currentMenuItem], false, false);
+  }
+}
+
+// Вызывается из IR_UP/IR_DOWN (remote_control.cpp) при нажатии Up/Down где угодно, кроме
+// как внутри Bass/High — временно подставляет currentMenuItem под "Volume", запомнив, куда
+// вернуться (первый раз за сессию удержания; повторные вызовы во время уже активного оверлея
+// не перезаписывают сохранённое состояние)
+void beginVolumeOverlay() {
+  if (!volumeOverlayActive) {
+    volumeOverlaySavedMenuItem = currentMenuItem;
+    volumeOverlaySavedInSettingsMode = inSettingsMode;
+    volumeOverlayActive = true;
+  }
+  currentMenuItem = volumeMenuIndex();
+}
+
+// Откатывает currentMenuItem/inSettingsMode к тому, что было до beginVolumeOverlay(), и
+// перерисовывает тот экран — вызывается автостопом мотора (main.cpp, loop()), когда Up/Down
+// давно не приходили (т.е. кнопку отпустили)
+void endVolumeOverlay() {
+  if (!volumeOverlayActive) {
+    return;
+  }
+  volumeOverlayActive = false;
+  currentMenuItem = volumeOverlaySavedMenuItem;
+  inSettingsMode = volumeOverlaySavedInSettingsMode;
+  redrawCurrentScreen();
+}
+
+bool sourceOverlayActive = false;
+static unsigned long sourceOverlayStart = 0;
+static int sourceOverlaySavedMenuItem = 0;
+static bool sourceOverlaySavedInSettingsMode = false;
+
+// Вызывается из IR_SET (remote_control.cpp) — запоминает, куда вернуться (только при первом
+// нажатии за сессию показа, повторные нажатия просто продлевают показ, не трогая
+// сохранённое состояние), и запускает/перезапускает таймер на SOURCE_OVERLAY_DURATION_MS
+void beginSourceOverlay() {
+  if (!sourceOverlayActive) {
+    sourceOverlaySavedMenuItem = currentMenuItem;
+    sourceOverlaySavedInSettingsMode = inSettingsMode;
+    sourceOverlayActive = true;
+  }
+  sourceOverlayStart = millis();
+}
+
+// Вызывается из loop() каждую итерацию — как только пройдёт SOURCE_OVERLAY_DURATION_MS с
+// последнего нажатия Set, откатывает currentMenuItem/inSettingsMode и перерисовывает экран,
+// что был виден до первого нажатия
+void updateSourceOverlay() {
+  if (sourceOverlayActive && millis() - sourceOverlayStart >= SOURCE_OVERLAY_DURATION_MS) {
+    sourceOverlayActive = false;
+    currentMenuItem = sourceOverlaySavedMenuItem;
+    inSettingsMode = sourceOverlaySavedInSettingsMode;
+    redrawCurrentScreen();
+  }
+}
 
 void resetCursor() {
   if (menuItems[currentMenuItem] == "Bass" || menuItems[currentMenuItem] == "High" || menuItems[currentMenuItem] == "Volume") {
@@ -56,7 +150,6 @@ void setup() {
   Serial.println("Starting setup...");
 
   u8g2.begin();
-  playBootAnimation(); // Показываем сразу после физического включения (просто воткнули кабель)
   volumeRing.begin();
   bassRing.begin();
   highRing.begin();
@@ -97,38 +190,46 @@ void setup() {
 
   loadSettings(); // Загрузка сохраненных настроек
 
-  digitalWrite(RELAY_PIN_STANDBY, HIGH); // Включаем реле Standby
-  digitalWrite(RELAY_PIN_VU_METER, HIGH); // Включаем реле VU Meter
-  digitalWrite(RELAY_PIN_MUTE, LOW); // Устанавливаем реле Mute в неактивное состояние (низкий уровень для реле высокого уровня)
-  applyBypassState(); // Реле Bypass + индикаторный светодиод из settings[4], загруженного из EEPROM
-  applySourceSelection(); // Включаем источник из settings[7] по умолчанию
-
   initRemoteControl();
   attachInterrupt(digitalPinToInterrupt(ENCODER_A_PIN), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCODER_B_PIN), encoderISR, CHANGE);
 
   Serial.println("Setup complete"); // Отладочный вывод
 
-  // Кольца светятся сразу после включения, не только внутри своих пунктов меню
-  updateVolumeRing(readVolumePotPercent());
-  renderDbRing(bassRing, readBassPotPercent(), bassRingState);
-  renderDbRing(highRing, readHighPotPercent(), highRingState);
-
-  drawMenu();
+  // Та же последовательность включения, что и при программном Power On с пульта (см.
+  // on_off_logic.cpp) — восстанавливает Bypass и положение Bass/High из EEPROM, играет
+  // анимацию "POWER ON", включает реле/светодиоды, рисует меню. Раньше физическое включение
+  // (просто воткнули кабель) делало упрощённую версию вручную прямо здесь и НЕ восстанавливало
+  // EEPROM вообще (Bypass всегда стартовал выключенным, Bass/High не доезжали до сохранённого
+  // положения) — теперь оба пути включения ведут себя одинаково
+  powerOnDevices();
 }
 
 void loop() {
   handleRemoteInput(); // Проверяет сигнал с ИК-пульта сама (IrReceiver.decode())
 
-  checkEncoderButton();
-  checkBypassButton();
+  updateSourceOverlay(); // Откатывает полноэкранный показ Source (Set с пульта) по таймеру
+
+  // Пока Mute включён, экран целиком занят непрерывной MUTE-анимацией (см. ниже) — навигация
+  // энкодером (вход/выход из настроек, смена пункта, вращение) недоступна по той же причине,
+  // что и с пульта (см. remote_control.cpp) — не бороться за экран с этой анимацией. Пока
+  // система выключена (powerOff) — тоже недоступна: должна работать только кнопка Power
+  // с пульта, энкодер (вращение и кнопка) и физическая кнопка Bypass — не должны иметь эффекта
+  if (!isMuted && !powerOff) {
+    checkEncoderButton();
+  }
+  if (!powerOff) {
+    checkBypassButton();
+  }
 
   if (!powerOff) {
     updateBassHighRecenter(); // Автовозврат Bass/High в 0dB после переключения Bypass (или к сохранённому положению после включения питания)
     updateVolumeSeek(); // Автовозврат Volume к VOLUME_POWERON_TARGET_PERCENT после включения питания
   }
 
-  if (encoderValue != 0) {
+  if (isMuted || powerOff) {
+    encoderValue = 0; // Отбрасываем накопленное вращение — навигация недоступна, пока включён Mute или система выключена
+  } else if (encoderValue != 0) {
     if (!inSettingsMode) {
       if (encoderValue > 0) {
         currentMenuItem = (currentMenuItem + 1) % MENU_ITEM_COUNT;
@@ -208,8 +309,9 @@ void loop() {
     }
   }
 
-  // Обновление светодиодов в режиме настройки
-  if (inSettingsMode) {
+  // Обновление светодиодов в режиме настройки (или во время временного показа Volume
+  // с карусели через Up/Down — см. volumeOverlayActive)
+  if (inSettingsMode || volumeOverlayActive) {
     if (menuItems[currentMenuItem] == "Bass") {
       blinkLED(LED_BASS_PIN);
     } else if (menuItems[currentMenuItem] == "High") {
@@ -221,6 +323,30 @@ void loop() {
     digitalWrite(LED_BASS_PIN, HIGH);
     digitalWrite(LED_HIGH_PIN, HIGH);
     digitalWrite(LED_VOLUME_PIN, HIGH);
+  }
+
+  // Крутящаяся иконка пункта меню в углу drawMenu(), пока пользователь сидит на карусели
+  // (не зашёл в настройки). Частичное обновление тайлов (не весь экран) — см. подробности в
+  // hardware_settings.h у MENU_ICON_* и в bass_volume_high_animation.h
+  if (!isMuted && !inSettingsMode && !volumeOverlayActive && !sourceOverlayActive && !powerOff) {
+    if (menuItems[currentMenuItem] == "Bass" || menuItems[currentMenuItem] == "High" || menuItems[currentMenuItem] == "Volume") {
+      animateBassVolumeHighIconPartial(MENU_ICON_X, MENU_ICON_Y);
+    } else if (menuItems[currentMenuItem] == "VU Meter") {
+      animateVuMeterIconPartial(MENU_ICON_X, MENU_ICON_Y);
+    } else if (menuItems[currentMenuItem] == "Bypass") {
+      animateBypassIconPartial(MENU_ICON_X, MENU_ICON_Y);
+    } else if (menuItems[currentMenuItem] == "Dimmer") {
+      animateDimmerIconPartial(MENU_ICON_X, MENU_ICON_Y);
+    } else if (menuItems[currentMenuItem] == "Color") {
+      animateColorIconPartial(MENU_ICON_X, MENU_ICON_Y);
+    } else if (menuItems[currentMenuItem] == "Source") {
+      animateSourceIconPartial(MENU_ICON_X, MENU_ICON_Y);
+    }
+  }
+
+  // Непрерывная MUTE-анимация — занимает весь экран, пока Mute включён (см. mute_animation.h)
+  if (isMuted) {
+    animateMuteFrame();
   }
 
   // Кольца Bass/High/Volume светятся всегда (не только внутри своих пунктов меню), пока система не в Standby.
@@ -287,20 +413,25 @@ void loop() {
     }
   }
 
-  // Моторы Bass/High/Volume мгновенно останавливаются, если давно не было новых команд от энкодера/пульта
-  if (inSettingsMode && millis() - lastMotorInputTime > SLIDER_MOTOR_IDLE_TIMEOUT) {
+  // Моторы Bass/High/Volume мгновенно останавливаются, если давно не было новых команд от
+  // энкодера/пульта — тем же таймаутом заканчивается и временный показ Volume с карусели
+  // через Up/Down (см. volumeOverlayActive), раз новых команд на мотор Volume нет
+  if ((inSettingsMode || volumeOverlayActive) && millis() - lastMotorInputTime > SLIDER_MOTOR_IDLE_TIMEOUT) {
     if (menuItems[currentMenuItem] == "Bass") {
       motorControl(0, MOTOR1_IN, MOTOR1_PWM);
     } else if (menuItems[currentMenuItem] == "High") {
       motorControl(0, MOTOR2_IN, MOTOR2_PWM);
     } else if (menuItems[currentMenuItem] == "Volume") {
       motorControl2(0, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
+      if (volumeOverlayActive) {
+        endVolumeOverlay();
+      }
     }
   }
 
   // Живое обновление экрана с положением ручки Bass/High/Volume (реже, экрану такая частота не нужна)
   static unsigned long lastPotUpdate = 0;
-  if (inSettingsMode &&
+  if (!isMuted && (inSettingsMode || volumeOverlayActive) &&
       (menuItems[currentMenuItem] == "Bass" || menuItems[currentMenuItem] == "High" || menuItems[currentMenuItem] == "Volume") &&
       millis() - lastPotUpdate >= 200) {
     lastPotUpdate = millis();

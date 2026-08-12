@@ -3,6 +3,7 @@
 #include "motor_position.h"
 #include "main.h"
 #include "neopixel.h"
+#include "animation_logic.h"
 
 void motorControl(int val, byte pinIN, byte pinPWM) {
   val = map(val, -50, 50, -255, 255);
@@ -53,22 +54,35 @@ static int highSeekTargetRaw = 0;
 static bool volumeSeeking = false;
 static int volumeSeekTargetPercent = 0;
 
-// Сравнивает по raw, а не по "снапнутому" отображаемому значению — тот округляет к 0
-// в широкой зоне (BASS_POT_ZERO_SNAP_RAW/HIGH_POT_ZERO_SNAP_RAW, нужной только для чистого
-// отображения на экране), из-за чего мотор останавливался на краю этой зоны, недокручивая
-// несколько градусов до истинной цели
+// Допуск остановки мотора для КОНКРЕТНОЙ цели автовозврата: если цель — это ноль (или
+// достаточно близко к нему, чтобы экран всё равно показал бы 0dB/зелёный), используем ТОТ
+// ЖЕ допуск, что даёт зелёный цвет на экране (*_POT_ZERO_SNAP_RAW, шире) — гонять мотор
+// за точностью, которую экран не отображает (MOTOR_RECENTER_RAW_EPSILON, ýже), только
+// заставляет его проскакивать мимо узкого окна из-за инерции мотора+редуктора и докручивать
+// обратно ("то влево то вправо" — особенно заметно на восстановлении к нулю после
+// включения/Bypass). Для произвольных (не нулевых) целей — например восстановленное из
+// EEPROM ненулевое положение — экранного "снапа" нет, там точность MOTOR_RECENTER_RAW_EPSILON
+// имеет смысл (сравниваем по raw, а не по "снапнутому" отображаемому значению — иначе
+// мотор останавливался на краю широкой зоны, недокручивая несколько градусов до истинной цели)
+static int recenterEpsilonFor(int targetRaw, int zeroRaw, int zeroSnapRaw) {
+  if (abs(targetRaw - zeroRaw) <= zeroSnapRaw) {
+    return zeroSnapRaw;
+  }
+  return MOTOR_RECENTER_RAW_EPSILON;
+}
+
 void requestBassSeek(int targetRaw) {
   int raw;
   readBassPotPercent(&raw);
   bassSeekTargetRaw = targetRaw;
-  bassSeeking = abs(raw - targetRaw) > MOTOR_RECENTER_RAW_EPSILON;
+  bassSeeking = abs(raw - targetRaw) > recenterEpsilonFor(targetRaw, bassZeroRaw(), BASS_POT_ZERO_SNAP_RAW);
 }
 
 void requestHighSeek(int targetRaw) {
   int raw;
   readHighPotPercent(&raw);
   highSeekTargetRaw = targetRaw;
-  highSeeking = abs(raw - targetRaw) > MOTOR_RECENTER_RAW_EPSILON;
+  highSeeking = abs(raw - targetRaw) > recenterEpsilonFor(targetRaw, highZeroRaw(), HIGH_POT_ZERO_SNAP_RAW);
 }
 
 void requestBassHighRecenter() {
@@ -88,7 +102,8 @@ void updateBassHighRecenter() {
   if (bassSeeking) {
     int raw;
     readBassPotPercent(&raw);
-    if (abs(raw - bassSeekTargetRaw) <= MOTOR_RECENTER_RAW_EPSILON) {
+    int epsilon = recenterEpsilonFor(bassSeekTargetRaw, bassZeroRaw(), BASS_POT_ZERO_SNAP_RAW);
+    if (abs(raw - bassSeekTargetRaw) <= epsilon) {
       motorControl(0, MOTOR1_IN, MOTOR1_PWM);
       bassSeeking = false;
     } else {
@@ -100,7 +115,8 @@ void updateBassHighRecenter() {
   if (highSeeking) {
     int raw;
     readHighPotPercent(&raw);
-    if (abs(raw - highSeekTargetRaw) <= MOTOR_RECENTER_RAW_EPSILON) {
+    int epsilon = recenterEpsilonFor(highSeekTargetRaw, highZeroRaw(), HIGH_POT_ZERO_SNAP_RAW);
+    if (abs(raw - highSeekTargetRaw) <= epsilon) {
       motorControl(0, MOTOR2_IN, MOTOR2_PWM);
       highSeeking = false;
     } else {
@@ -137,6 +153,29 @@ void updateVolumeSeek() {
   }
 }
 
+// Как и обычная перерисовка в main.cpp, уважает bypassAnimMode — если Bypass включён
+// (режим 2, центр держится красным всё время, пока Bypass включён), кольца Bass/High не
+// должны на секунду переключаться на обычный зелёный нулевой цвет только потому, что
+// система в этот момент выключается
+static void renderShutdownRings() {
+  int bassPercent = readBassPotPercent();
+  int highPercent = readHighPotPercent();
+  if (bypassAnimMode == 0) {
+    renderDbRing(bassRing, bassPercent, bassRingState);
+    renderDbRing(highRing, highPercent, highRingState);
+  } else {
+    unsigned long elapsed = millis() - bypassAnimStart;
+    if (bypassAnimMode == 1) {
+      renderBypassFillAnim(bassRing, elapsed);
+      renderBypassFillAnim(highRing, elapsed);
+    } else {
+      renderBypassBlinkAnim(bassRing, elapsed, bassPercent);
+      renderBypassBlinkAnim(highRing, elapsed, highPercent);
+    }
+  }
+  updateVolumeRing(readVolumePotPercent());
+}
+
 void seekBassHighVolumeToZeroBlocking() {
   requestBassSeek(bassZeroRaw());
   requestHighSeek(highZeroRaw());
@@ -147,14 +186,9 @@ void seekBassHighVolumeToZeroBlocking() {
     updateVolumeSeek();
     // Кольца иначе не обновляются — этот цикл сам не даёт дойти до обычной перерисовки
     // в main.cpp, а ручки при этом реально едут в ноль
-    renderDbRing(bassRing, readBassPotPercent(), bassRingState);
-    renderDbRing(highRing, readHighPotPercent(), highRingState);
-    updateVolumeRing(readVolumePotPercent());
+    renderShutdownRings();
     delay(5);
   }
   stopAllMotors(); // Предохранитель: гарантированно стоп, даже если что-то не успело доехать до таймаута
-  // Финальный кадр — на случай если моторы остановились чуть раньше последней отрисовки выше
-  renderDbRing(bassRing, readBassPotPercent(), bassRingState);
-  renderDbRing(highRing, readHighPotPercent(), highRingState);
-  updateVolumeRing(readVolumePotPercent());
+  renderShutdownRings(); // Финальный кадр — на случай если моторы остановились чуть раньше последней отрисовки выше
 }

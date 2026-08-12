@@ -97,7 +97,12 @@ bool dbRingBlinking(const DbRingState &state) {
 // не только обычная отрисовка уровня дБ
 void renderDbRingOuterLeds(Adafruit_NeoPixel &ring, int dbValue) {
   if (dbValue > 0) {
-    int litCount = constrain(map(dbValue, 0, 10, 0, 4), 0, 4);
+    // map(dbValue, 1, 10, 1, 4), не map(dbValue, 0, 10, 0, 4) — целочисленное деление у
+    // последнего округляет ЛЮБОЕ dbValue из {1,2} в litCount=0 (1*4/10=0, 2*4/10=0), а раз
+    // dbValue!=0 (мы уже не в ветке нуля), это давало ПОЛНОСТЬЮ тёмное кольцо — ни зелёного
+    // центра (не на нуле), ни жёлтого края (0 светодиодов). Теперь любое не-нулевое значение
+    // зажигает хотя бы 1 светодиод
+    int litCount = constrain(map(dbValue, 1, 10, 1, 4), 1, 4);
     for (int i = 0; i < litCount; i++) {
       // Градиент от нуля к краю: ближний к центру светодиод (i=0) самый тусклый,
       // крайний (i=3) самый яркий. Зелёной пары это не касается
@@ -108,7 +113,7 @@ void renderDbRingOuterLeds(Adafruit_NeoPixel &ring, int dbValue) {
         (uint8_t)(currentRingColorB * fraction));
     }
   } else if (dbValue < 0) {
-    int litCount = constrain(map(-dbValue, 0, 10, 0, 4), 0, 4);
+    int litCount = constrain(map(-dbValue, 1, 10, 1, 4), 1, 4);
     for (int i = 0; i < litCount; i++) {
       float fraction = (i + 1) / 4.0;
       ring.setPixelColor(ringNegativeOrder[i],

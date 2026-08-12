@@ -14,6 +14,17 @@
 #define DISPLAY_CS_PIN 10
 #define DISPLAY_DC_PIN 9
 #define DISPLAY_RESET_PIN 12
+// Минимальный зазор между двумя ПОЛНЫМИ перерисовками drawMenu() (display_logic.cpp),
+// независимо от того, что их вызвало и в каком порядке — см. комментарий у MENU_ICON_*
+// ниже: две передачи слишком близко по времени друг к другу визуально "теряли" одну из них
+#define DISPLAY_REDRAW_MIN_GAP_MS 50
+// Отдельный, гораздо более короткий зазор именно после ЧАСТИЧНОГО обновления иконки
+// (updateDisplayArea() в animate*IconPartial()) — самой передаче нужно лишь несколько мс
+// (она в разы меньше полного буфера), поэтому полный DISPLAY_REDRAW_MIN_GAP_MS (50мс) для
+// этого случая избыточен и заметно тормозит навигацию (задержка почти на каждое нажатие,
+// т.к. иконка тикает каждые MENU_ICON_FRAME_DELAY_MS). Этого зазора достаточно, чтобы
+// drawMenu() не стартовал полную передачу прямо во время хвоста частичной
+#define DISPLAY_PARTIAL_REDRAW_MIN_GAP_MS 20
 
 // --- Анимация включения/выключения (boot_animation.cpp) — играет при физическом
 // включении питания (setup()) и при программном Power On/Off (on_off_logic.cpp) ---
@@ -21,6 +32,34 @@
 #define BOOT_ANIMATION_DURATION_MS 4000 // Общая длительность — кадры зацикливаются, пока не наберётся это время
 #define BOOT_ANIMATION_X 40 // Левый верхний угол кадра (кадр 48x48, по центру экрана 128x64)
 #define BOOT_ANIMATION_Y 8
+
+// --- Полноэкранные анимации при переключении Mute (mute_animation.cpp/unmute_animation.cpp) —
+// кадры сгенерированы https://wokwi.com/animator (графика icons8.com), тот же формат и
+// приём конвертации, что у boot_animation.cpp. Играют один раз через все кадры подряд
+// (не зацикливаясь, в отличие от boot_animation) при каждом переключении Mute ---
+#define MUTE_ANIM_FRAME_DELAY_MS 42 // Задержка между кадрами
+#define MUTE_ANIM_X 40 // Кадр 48x48 (уменьшено с 64x64), по центру экрана 128x64
+#define MUTE_ANIM_Y 8
+#define UNMUTE_ANIM_FRAME_DELAY_MS 42
+#define UNMUTE_ANIM_X 40 // Кадр 48x48 (уменьшено с 64x64), по центру экрана 128x64
+#define UNMUTE_ANIM_Y 8
+
+// --- Анимации-индикаторы на экране главного меню (drawMenu()) — крутящаяся иконка в крайней
+// левой части экрана, своя для каждого пункта меню (bass_volume_high_animation.cpp — общая для
+// Bass/High/Volume, vu_meter_animation.cpp, bypass_animation.cpp, dimmer_animation.cpp,
+// color_animation.cpp, source_animation.cpp). В отличие от Mute-анимаций — не одноразовые, а
+// крутятся непрерывно, пока пользователь сидит на соответствующем пункте карусели меню.
+// Все используют одну и ту же позицию на экране (показывается только одна иконка за раз,
+// под текущий currentMenuItem) — отсюда общие, не по-отдельности на каждую анимацию, константы:
+#define MENU_ICON_X 0 // Кадр 32x32, крайняя левая часть экрана 128x64
+#define MENU_ICON_Y 10 // По центру вертикали ((64-32)/2)
+#define MENU_ICON_FRAME_DELAY_MS 42 // Задержка между кадрами внутри анимации
+//
+// main.cpp перерисовывает только тайлы под самой иконкой через u8g2.updateDisplayArea()
+// (не весь drawMenu()) — полная SPI-передача экрана (1024 байта) слишком часто конфликтовала
+// с перерисовкой от навигации (см. подробный разбор и историю фикса в CLAUDE.md, раздел
+// "Анимации-индикаторы пунктов меню"). DISPLAY_REDRAW_MIN_GAP_MS (выше) — дополнительная
+// защита на случай, если что-то всё же вызовет полный drawMenu() слишком близко по времени ---
 
 // --- Энкодер и его кнопка ---
 #define ENCODER_A_PIN 18 // INT5 — обязательно пин с аппаратным прерыванием (алгоритм Мазурова)
@@ -83,6 +122,13 @@
 #define SOURCE_RELAY_2_PIN 44
 #define SOURCE_RELAY_3_PIN 46
 #define SOURCE_COUNT 3
+// Названия источников для экрана (см. drawSourceScreen() в display_logic.cpp) — порядок
+// соответствует порядку переключения settings[7]/applySourceSelection() (relay.cpp)
+const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT"};
+// Сколько держится полноэкранный показ источника после нажатия Set на пульте (см.
+// beginSourceOverlay()/updateSourceOverlay() в main.cpp), прежде чем само вернуться туда,
+// где был экран до нажатия
+#define SOURCE_OVERLAY_DURATION_MS 1200
 
 // --- ИК-приёмник и коды команд пульта. Читаются через IRremote. После
 // переобучения пульт шлёт все кнопки одним протоколом RC5, Address=0x18 —
@@ -99,6 +145,7 @@
 #define IR_POWER 0x1 // RC5, Address=0x18
 #define IR_UP 0x1D // RC5, Address=0x18 — двигает мотор Bass/High/Volume, пока держишь
 #define IR_DOWN 0x8 // RC5, Address=0x18 — двигает мотор Bass/High/Volume, пока держишь
+#define IR_SET 0x21 // RC5, Address=0x18 — прямой шорткат переключения Source (см. IR_REMOTE_CODES.md)
 
 // --- Светодиоды пунктов меню Bass/High/Volume ---
 #define LED_BASS_PIN 39
@@ -221,15 +268,20 @@ const RingColor ringColorPalette[RING_COLOR_COUNT] = {
 // значение попадает в эту зону, показывается ровно 0dB, а не близкое промежуточное значение —
 // так реальный 0 можно физически "поймать", не подбирая точное положение ручки
 // ============================================================================
-#define BASS_POT_ZERO_SNAP_RAW 5
-#define HIGH_POT_ZERO_SNAP_RAW 5
+// Расширено с 5: этот же допуск используется и для остановки мотора при автовозврате к нулю
+// (см. recenterEpsilonFor() в motor_driver_logic.cpp) — за краткий люфт/отскок механики между
+// командой "стоп" и следующим реальным замером потенциометра значение могло уйти чуть дальше
+// прежнего узкого окна, и экран на секунду показывал "не совсем ноль" (ни зелёный, ни жёлтый
+// толком) именно после автовозврата (Bypass, включение/выключение питания)
+#define BASS_POT_ZERO_SNAP_RAW 8
+#define HIGH_POT_ZERO_SNAP_RAW 8
 // *_POT_ZERO_EXIT_SNAP_RAW — гистерезис: шире, чем *_POT_ZERO_SNAP_RAW. Как только
 // значение один раз распозналось как 0dB, выйти из зоны 0dB требует отклонения больше
 // этого запаса, а не обычного (входного). Без этого дребезг контакта потенциометра
 // ровно в точке 0dB (у некоторых экземпляров именно там контакт "прыгает") заставляет
 // показание/кольцо мигать между 0dB и ±1dB даже когда ручка физически не движется
-#define BASS_POT_ZERO_EXIT_SNAP_RAW 10
-#define HIGH_POT_ZERO_EXIT_SNAP_RAW 10
+#define BASS_POT_ZERO_EXIT_SNAP_RAW 13
+#define HIGH_POT_ZERO_EXIT_SNAP_RAW 13
 // *_POT_MIN_SNAP_RAW/*_POT_MAX_SNAP_RAW — то же самое, но у краёв шкалы (-10dB/+10dB): если
 // ручка физически не докручивается точно до калибровочного raw на краю, но близко к нему —
 // всё равно показываем ровно -10/+10, а не -9/8 и т.п. У минимума запас маленький, т.к. рядом
@@ -301,9 +353,12 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define SOURCE_VALUE_Y 45
 
 // --- Название текущего пункта меню (крупный текст по центру) на экране drawMenu() ---
-#define MENU_TITLE_FONT u8g2_font_ncenB14_tf
+// _tr, а не _tf — пункты меню это обычный ASCII (Bass/High/Volume/...), полный юникод-набор
+// _tf не нужен, а весит заметно больше (экономия ~2.6КБ в зоне PROGMEM-шрифтов, см. память
+// про лимит 64КБ)
+#define MENU_TITLE_FONT u8g2_font_ncenB12_tr
 #define MENU_TITLE_Y 32
-#define MENU_TITLE_X_OFFSET 0 // Доп. сдвиг по X относительно центра (ширина текста разная у каждого пункта, поэтому X всегда считается заново)
+#define MENU_TITLE_X_OFFSET 10 // Доп. сдвиг по X относительно центра (ширина текста разная у каждого пункта, поэтому X всегда считается заново)
 
 // --- Точки-индикаторы текущего пункта меню на экране drawMenu() ---
 #define MENU_DOTS_PER_ROW 4 // 8 пунктов в один ряд не влезает на 128px экран, поэтому 2 ряда по 4
@@ -315,9 +370,7 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define MENU_DOT_ROW1_X_OFFSET -21 // Доп. сдвиг по X верхнего ряда точек относительно центра
 #define MENU_DOT_ROW2_X_OFFSET +10 // Доп. сдвиг по X нижнего ряда точек относительно центра
 
-// --- Мелкие текстовые индикаторы состояния (mute/bypass) на экране drawMenu() ---
+// --- Мелкий текстовый индикатор состояния Bypass (на всех экранах, не только drawMenu()) ---
 #define STATUS_INDICATOR_FONT u8g2_font_ncenB08_tr
-#define MUTE_INDICATOR_X 100 // Правый верхний угол
-#define MUTE_INDICATOR_Y 10
-#define BYPASS_INDICATOR_X 2 // Левый верхний угол
+#define BYPASS_INDICATOR_X 100 // Правый верхний угол — раньше здесь была надпись "mute"
 #define BYPASS_INDICATOR_Y 10

@@ -35,11 +35,14 @@ void checkBypassButton() {
       triggerBypassAnim();
       // Перерисовываем экран, чтобы кнопка отражалась независимо от того, что на
       // экране в момент нажатия: надпись "bypass" в карусели меню или toggle switch
-      // на экране настроек самого пункта "Bypass"
-      if (inSettingsMode && menuItems[currentMenuItem] == "Bypass") {
-        drawToggleSwitch(settings[4] == 1);
-      } else if (!inSettingsMode) {
-        drawMenu();
+      // на экране настроек самого пункта "Bypass". Пока включён Mute, экран занят его
+      // непрерывной анимацией (см. main.cpp) — реле всё равно переключаем, а экран не трогаем
+      if (!isMuted) {
+        if (inSettingsMode && menuItems[currentMenuItem] == "Bypass") {
+          drawToggleSwitch(settings[4] == 1);
+        } else if (!inSettingsMode) {
+          drawMenu();
+        }
       }
     }
   }

@@ -7,7 +7,7 @@
 #include "motor_driver_logic.h"
 #include "motor_position.h"
 #include "animation_logic.h"
-#include "boot_animation.h"
+#include "animations/boot_animation.h"
 #include <EEPROM.h>
 
 bool powerOff = false; // Флаг для состояния питания
