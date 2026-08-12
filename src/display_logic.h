@@ -17,3 +17,13 @@ void drawDimmerScreen(int percent);
 void drawColorScreen(int colorIndex);
 void drawSourceScreen(int sourceIndex);
 void displayMessage(const char* message);
+
+// Момент последней ПОЛНОЙ перерисовки drawMenu() (millis()) — используется
+// bass_volume_high_animation.cpp (и аналогичными файлами), чтобы фоновое частичное
+// обновление иконки не лезло в SPI слишком близко по времени к полной перерисовке от навигации
+unsigned long lastMenuDrawTime();
+
+// Отмечает момент ЧАСТИЧНОЙ передачи (updateDisplayArea() из animate*IconPartial()) —
+// чтобы drawMenu() знал о ней и не стартовал полную перерисовку прямо во время её хвоста
+// (короткий зазор DISPLAY_PARTIAL_REDRAW_MIN_GAP_MS, не полный DISPLAY_REDRAW_MIN_GAP_MS)
+void markPartialDisplayTransfer();

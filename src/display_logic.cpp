@@ -4,19 +4,22 @@
 #include "animation_logic.h"
 #include "neopixel.h"
 #include "motor_position.h"
+#include "animations/bass_volume_high_animation.h"
+#include "animations/vu_meter_animation.h"
+#include "animations/bypass_animation.h"
+#include "animations/dimmer_animation.h"
+#include "animations/color_animation.h"
+#include "animations/source_animation.h"
 
 U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
 
-// Надписи "mute"/"bypass" в углах экрана — нужны на ВСЕХ экранах (не только карусели
-// меню), иначе при переключении Mute/Bypass из настроек конкретного пункта не видно
-// подтверждения, что оно сработало (drawMenu() туда специально не вызывается — это
-// вызывало скачок экрана в карусель и обратно)
+// Надпись "bypass" в углу экрана — нужна на ВСЕХ экранах (не только карусели меню),
+// иначе при переключении Bypass из настроек конкретного пункта не видно подтверждения,
+// что оно сработало (drawMenu() туда специально не вызывается — это вызывало скачок
+// экрана в карусель и обратно). "mute" здесь не рисуется — пока включён Mute, экран и
+// так целиком занят непрерывной MUTE-анимацией (см. animateMuteFrame() в main.cpp), эта
+// функция в тот момент вообще не вызывается ни с одного из обычных экранов
 static void drawStatusIndicators() {
-  if (isMuted) {
-    u8g2.setFont(STATUS_INDICATOR_FONT);
-    u8g2.setCursor(MUTE_INDICATOR_X, MUTE_INDICATOR_Y);
-    u8g2.print("mute");
-  }
   if (settings[4] == 1) { // Bypass активен
     u8g2.setFont(STATUS_INDICATOR_FONT);
     u8g2.setCursor(BYPASS_INDICATOR_X, BYPASS_INDICATOR_Y);
@@ -24,7 +27,39 @@ static void drawStatusIndicators() {
   }
 }
 
+static unsigned long lastDisplayTransferTime = 0;
+static unsigned long lastPartialDisplayTransferTime = 0;
+
+// Гарантирует минимальный зазор с ЛЮБОЙ предыдущей полной передачей на дисплей — неважно,
+// какой из draw*()/sendBuffer() её вызвал. Этот дисплей физически "теряет" одну из двух
+// передач, если они идут слишком близко по времени друг к другу (см. DISPLAY_REDRAW_MIN_GAP_MS
+// и историю фикса в CLAUDE.md, раздел "Анимации-индикаторы пунктов меню") — сначала это
+// вылезло только на drawMenu() (навигация не отображалась с первого нажатия). Отдельно —
+// более короткий зазор именно с последним ЧАСТИЧНЫМ обновлением иконки (updateDisplayArea()),
+// чтобы drawMenu() не стартовал полную передачу прямо во время её хвоста: полный
+// DISPLAY_REDRAW_MIN_GAP_MS тут избыточен (частичная передача в разы короче полной) и заметно
+// тормозит навигацию, если применять его же
+static void waitForDisplayRedrawGap() {
+  unsigned long now = millis();
+  unsigned long sinceLastFull = now - lastDisplayTransferTime;
+  if (lastDisplayTransferTime != 0 && sinceLastFull < DISPLAY_REDRAW_MIN_GAP_MS) {
+    delay(DISPLAY_REDRAW_MIN_GAP_MS - sinceLastFull);
+    now = millis();
+  }
+  unsigned long sinceLastPartial = now - lastPartialDisplayTransferTime;
+  if (lastPartialDisplayTransferTime != 0 && sinceLastPartial < DISPLAY_PARTIAL_REDRAW_MIN_GAP_MS) {
+    delay(DISPLAY_PARTIAL_REDRAW_MIN_GAP_MS - sinceLastPartial);
+  }
+  lastDisplayTransferTime = millis();
+}
+
+void markPartialDisplayTransfer() {
+  lastPartialDisplayTransferTime = millis();
+}
+
 void drawMenu() {
+  waitForDisplayRedrawGap();
+
   u8g2.setFont(MENU_TITLE_FONT);
   u8g2.clearBuffer();
 
@@ -48,12 +83,34 @@ void drawMenu() {
   u8g2.setCursor((128 - u8g2.getStrWidth(menuItems[currentMenuItem].c_str())) / 2 + MENU_TITLE_X_OFFSET, MENU_TITLE_Y);
   u8g2.print(menuItems[currentMenuItem]);
 
+  // Крутящаяся иконка пункта меню — своя для каждого пункта (или общая для Bass/High/Volume),
+  // см. подробности в hardware_settings.h у MENU_ICON_*
+  if (menuItems[currentMenuItem] == "Bass" || menuItems[currentMenuItem] == "High" || menuItems[currentMenuItem] == "Volume") {
+    drawBassVolumeHighAnim(MENU_ICON_X, MENU_ICON_Y);
+  } else if (menuItems[currentMenuItem] == "VU Meter") {
+    drawVuMeterAnim(MENU_ICON_X, MENU_ICON_Y);
+  } else if (menuItems[currentMenuItem] == "Bypass") {
+    drawBypassAnim(MENU_ICON_X, MENU_ICON_Y);
+  } else if (menuItems[currentMenuItem] == "Dimmer") {
+    drawDimmerAnim(MENU_ICON_X, MENU_ICON_Y);
+  } else if (menuItems[currentMenuItem] == "Color") {
+    drawColorAnim(MENU_ICON_X, MENU_ICON_Y);
+  } else if (menuItems[currentMenuItem] == "Source") {
+    drawSourceAnim(MENU_ICON_X, MENU_ICON_Y);
+  }
+
   drawStatusIndicators();
 
   u8g2.sendBuffer();
 }
 
+unsigned long lastMenuDrawTime() {
+  return lastDisplayTransferTime;
+}
+
 void drawToggleSwitch(bool state) {
+  waitForDisplayRedrawGap();
+
   u8g2.setFont(u8g2_font_ncenB14_tr);
   u8g2.clearBuffer();
 
@@ -81,6 +138,8 @@ void drawToggleSwitch(bool state) {
 }
 
 void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLeft) {
+  waitForDisplayRedrawGap();
+
   u8g2.clearBuffer();
 
   bool isVolume = (menuItems[currentMenuItem] == "Volume");
@@ -111,7 +170,11 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
       renderDbRing(highRing, potValue, highRingState);
     }
   }
-  int angleValue = map(potValue, valueMin, valueMax, -120, 120) + 10; // +10° смещение угла стрелки (применяется везде)
+  // Без смещения: на центральном значении (0dB для Bass/High, 50% для Volume) map() даёт
+  // ровно 0°, и стрелка (см. arrowX/arrowY ниже) смотрит точно вверх — перпендикулярно
+  // горизонту. Раньше был "+10" сдвиг, из-за которого стрелка была не строго вертикальна
+  // именно в центральной точке
+  int angleValue = map(potValue, valueMin, valueMax, -120, 120);
 
   Serial.print(menuItems[currentMenuItem]);
   Serial.print(" pot raw: ");
@@ -159,6 +222,8 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
 }
 
 void drawDimmerScreen(int percent) {
+  waitForDisplayRedrawGap();
+
   u8g2.setFont(DIMMER_LABEL_FONT);
   u8g2.clearBuffer();
 
@@ -176,6 +241,8 @@ void drawDimmerScreen(int percent) {
 }
 
 void drawColorScreen(int colorIndex) {
+  waitForDisplayRedrawGap();
+
   u8g2.setFont(COLOR_LABEL_FONT);
   u8g2.clearBuffer();
 
@@ -192,6 +259,8 @@ void drawColorScreen(int colorIndex) {
 }
 
 void drawSourceScreen(int sourceIndex) {
+  waitForDisplayRedrawGap();
+
   u8g2.setFont(SOURCE_LABEL_FONT);
   u8g2.clearBuffer();
 
@@ -200,7 +269,7 @@ void drawSourceScreen(int sourceIndex) {
 
   u8g2.setFont(SOURCE_VALUE_FONT);
   u8g2.setCursor(SOURCE_VALUE_X, SOURCE_VALUE_Y);
-  u8g2.print(sourceIndex + 1);
+  u8g2.print(sourceNames[sourceIndex]);
 
   drawStatusIndicators();
 

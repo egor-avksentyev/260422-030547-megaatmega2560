@@ -1,79 +1,163 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Этот файл — инструкция для Claude Code (claude.ai/code) при работе с кодом в этом репозитории.
 
-## Project
+## Проект
 
-Firmware for an Arduino Mega 2560 (PlatformIO env `megaatmega2560`) controlling a hardware audio unit: motor-driven Bass/High/Volume controls with NeoPixel ring level indicators, an SSD1306 OLED menu, IR remote + rotary encoder input, and relay-switched Standby/VU-Meter/LED/Mute/Bypass/Source.
+Прошивка для Arduino Mega 2560 (окружение PlatformIO `megaatmega2560`), управляющая аппаратным аудио-блоком: моторизованные регуляторы Bass/High/Volume с NeoPixel-кольцами-индикаторами уровня, OLED-меню на SSD1306, ввод с ИК-пульта и поворотного энкодера, и релейное переключение Standby/VU-Meter/LED/Mute/Bypass/Source.
 
-## Commands
+## Команды
 
 ```bash
-pio run                      # build
-pio run -t upload            # build + flash to the Mega over serial
-pio run -t upload -t monitor # flash then open serial monitor
-pio device monitor           # attach serial monitor (monitor_speed = 115200 is set in platformio.ini)
-pio run -t clean             # clean build artifacts
+pio run                      # собрать
+pio run -t upload            # собрать и залить на Mega по serial
+pio run -t upload -t monitor # залить и открыть монитор порта
+pio device monitor           # подключиться к монитору порта (monitor_speed = 115200 в platformio.ini)
+pio run -t clean             # очистить артефакты сборки
 ```
 
-`test/` and `lib/` only contain PlatformIO's default scaffold README — no unit tests or private libraries currently exist in this project.
+`test/` и `lib/` содержат только стандартную заглушку PlatformIO (README) — в проекте пока нет ни unit-тестов, ни собственных библиотек.
 
-If the serial monitor shows garbled text, check for a stale `platformio device monitor` process still holding the port from before a `monitor_speed` change (`lsof /dev/cu.usbmodem*` on macOS, then `kill` it) — a running monitor process keeps using the baud rate it started with.
+Если в мониторе порта видна "каша" из символов — проверь, не висит ли где-то старый процесс `platformio device monitor`, запущенный до смены `monitor_speed` (`lsof /dev/cu.usbmodem*` на macOS, затем `kill`) — уже запущенный монитор продолжает работать на той скорости, с которой стартовал.
 
-## File layout
+Плата иногда пропадает из `/dev/cu.usbmodem*` между командами (переподключение по USB) — если `pio run -t upload` не находит порт, просто проверь `ls /dev/cu.usbmodem*` заново, адрес порта (число после `usbmodem`) может измениться.
 
-The firmware is split by responsibility, one `.h`/`.cpp` pair per module (all in `src/`). Every module includes `hardware_settings.h` for pin numbers, calibration tables and screen layout constants, and `main.h` for the shared menu state — those two are the ones nearly everything depends on.
+## Структура файлов
 
-- **`main.cpp`/`main.h`** — `setup()`/`loop()` and the core menu state (`menuItems[]`, `currentMenuItem`, `settings[]`, `inSettingsMode`, `isMuted`, `lastMotorInputTime`). This is the only place that calls into every other module; it owns no device-specific logic itself.
-- **`hardware_settings.h`** — every `#define` and calibration table: pin assignments, IR codes, motor/encoder timing, NeoPixel wiring order + color palette, potentiometer calibration arrays, and all on-screen font/position constants. Header-only (no `.cpp`) — nothing here should need runtime state. If you need to move something on the display, change a motor speed, or recalibrate a pot, this is the only file you should have to touch.
-- **`display_logic.h`/`.cpp`** — owns the `u8g2` display object and every screen: `drawMenu()`, `drawToggleSwitch()`, `drawArrowIndicator()`, `drawDimmerScreen()`, `drawColorScreen()`, `drawSourceScreen()`, `displayMessage()`.
-- **`encoder.h`/`.cpp`** — quadrature encoder ISR (`encoderISR()`, Mazurov state-table algorithm) and its push-button (`checkEncoderButton()`, double-click exits settings mode).
-- **`remote_control.h`/`.cpp`** — IR receiver ISR (`IR_ISR()` feeding a `NecDecoder`) and `handleRemoteInput()`, which acts on `IR_RIGHT`/`IR_LEFT`/`IR_ENTER`/`IR_MUTE`/`IR_POWER`.
-- **`motor_driver_logic.h`/`.cpp`** — low-level motor control: `motorControl()` (single direction pin + single PWM, Bass/High) and `motorControl2()` (dual direction + dual PWM, Volume), plus `stopAllMotors()`.
-- **`motor_position.h`/`.cpp`** — potentiometer position feedback for Bass/High/Volume: oversampled `analogRead()` + calibration-table interpolation (tables live in `hardware_settings.h`).
-- **`neopixel.h`/`.cpp`** — the three NeoPixel rings (Bass/High/Volume): ring objects, current color/brightness, dB-scale rendering (`renderDbRing()`), percent-scale rendering (`updateVolumeRing()`), and the 0dB "breathing" animation.
-- **`relay.h`/`.cpp`** — `applySourceSelection()` (Source menu item, mutually-exclusive relay), `applyBypassState()` (Bypass relay + indicator LED), and `checkBypassButton()` (physical Bypass button, debounced).
-- **`animation_logic.h`/`.cpp`** — the one-shot Bass/High ring animation that plays when Bypass toggles (`triggerBypassAnim()` + the fill/blink renderers). Same animation regardless of whether Bypass was toggled by its physical button, the menu via encoder, or the menu via IR remote.
-- **`on_off_logic.h`/`.cpp`** — global power sequencing: `powerOnDevices()`/`powerOffDevices()`, `powerOnScreen()`/`powerOffScreen()`, and the `powerOff` flag.
+Прошивка разбита по зонам ответственности, одна пара `.h`/`.cpp` на модуль (всё в `src/`, кроме OLED-анимаций — те в `src/animations/`, см. ниже). Почти каждый модуль подключает `hardware_settings.h` (пины, калибровочные таблицы, константы разметки экрана) и `main.h` (общее состояние меню) — это два файла, от которых зависит почти всё остальное.
 
-## Architecture
+- **`main.cpp`/`main.h`** — `setup()`/`loop()` и основное состояние меню (`menuItems[]`, `currentMenuItem`, `settings[]`, `inSettingsMode`, `isMuted`, `lastMotorInputTime`). Единственное место, которое вызывает функции всех остальных модулей; собственной логики, специфичной для конкретного устройства, здесь нет.
+- **`hardware_settings.h`** — все `#define` и калибровочные таблицы: назначение пинов, коды ИК-пульта, тайминги мотора/энкодера, порядок проводки и цветовая палитра NeoPixel, калибровочные массивы потенциометров, адреса EEPROM, все константы шрифтов/позиций на экране. Только заголовок, без `.cpp` — здесь не должно быть runtime-состояния. Если нужно подвинуть что-то на экране, поменять скорость мотора или перекалибровать потенциометр — это единственный файл, который должен понадобиться.
+- **`display_logic.h`/`.cpp`** — владеет объектом `u8g2` и всеми экранами: `drawMenu()`, `drawToggleSwitch()`, `drawArrowIndicator()`, `drawDimmerScreen()`, `drawColorScreen()`, `drawSourceScreen()`, `displayMessage()`, плюс общий для всех экранов `drawStatusIndicators()` (надписи "mute"/"bypass").
+- **`encoder.h`/`.cpp`** — прерывание квадратурного энкодера (`encoderISR()`, алгоритм состояний Олега Мазурова) и его кнопка (`checkEncoderButton()`, двойной клик выходит из режима настроек).
+- **`remote_control.h`/`.cpp`** — декодирование ИК-пульта через библиотеку `IRremote` (`initRemoteControl()`, `handleRemoteInput()`), которая опрашивается из `loop()`, а не работает по прерыванию декодирования (сам приём сигнала у `IRremote` таймерный, `decode()`/`resume()` вызываются из основного цикла).
+- **`motor_driver_logic.h`/`.cpp`** — низкоуровневое управление моторами (`motorControl()`/`motorControl2()`, `stopAllMotors()`) и весь механизм автовозврата/автонаведения (`requestBassSeek()`/`requestHighSeek()`/`requestVolumeSeek()` и их `update*`/`cancel*`, плюс блокирующий `seekBassHighVolumeToZeroBlocking()` для выключения питания).
+- **`motor_position.h`/`.cpp`** — обратная связь по потенциометрам Bass/High/Volume: усреднённый `analogRead()` + интерполяция по калибровочным таблицам (таблицы — в `hardware_settings.h`).
+- **`neopixel.h`/`.cpp`** — три NeoPixel-кольца (Bass/High/Volume): объекты лент, текущий цвет/яркость, отрисовка по дБ (`renderDbRing()`), отрисовка по % (`updateVolumeRing()`), "дыхание" на 0dB/середине шкалы.
+- **`relay.h`/`.cpp`** — `applySourceSelection()` (пункт меню Source, взаимоисключающее реле), `applyBypassState()` (реле Bypass + реле "LED"-эффекта + индикаторный светодиод), `checkBypassButton()` (физическая кнопка Bypass, с антидребезгом).
+- **`animation_logic.h`/`.cpp`** — разовая/постоянная анимация колец Bass/High при переключении Bypass (`triggerBypassAnim()` + рендереры заливки/мигания). Одна и та же анимация независимо от того, что переключило Bypass — физическая кнопка, пункт меню через энкодер или через ИК-пульт.
+- **`on_off_logic.h`/`.cpp`** — глобальная последовательность включения/выключения (`powerOnDevices()`/`powerOffDevices()`, `powerOnScreen()`/`powerOffScreen()`, флаг `powerOff`) и долговременная память в EEPROM (положение Bass/High, состояние Bypass) между циклами питания.
+- **`animations/`** — все OLED-анимации на кадрах из `wokwi.com/animator` (см. подробный шаблон в разделе "Анимации-индикаторы пунктов меню" ниже). Инклюды из файлов вне этой папки — с префиксом `animations/` (например `#include "animations/boot_animation.h"`); внутри самой папки — просто `#include "boot_animation.h"` (тот же каталог):
+  - **`boot_animation.h`/`.cpp`** — короткая анимация, проигрывается один раз при каждой смене состояния питания: физическое включение (`setup()`) и программные Power On/Off через пульт.
+  - **`mute_animation.h`/`.cpp`** — в отличие от остальных, не одноразовая и не по кадрам-в-угол: занимает **весь экран непрерывно**, пока включён Mute (см. `remote_control.cpp`, case `IR_MUTE`, и `main.cpp`, `loop()`); на это время навигация по меню (пульт и энкодер) заблокирована — см. "Mute" в разделе "Реле" ниже.
+  - **`unmute_animation.h`/`.cpp`** — разовая полноэкранная анимация перехода обратно при выключении Mute.
+  - **`bass_volume_high_animation.h`/`.cpp`**, **`vu_meter_animation.h`/`.cpp`**, **`bypass_animation.h`/`.cpp`**, **`dimmer_animation.h`/`.cpp`**, **`color_animation.h`/`.cpp`**, **`source_animation.h`/`.cpp`** — крутящаяся иконка в углу карусели меню, своя на каждый пункт (Bass/High/Volume делят одну и ту же). Все по одному шаблону — см. следующий раздел.
 
-### State model
-A single global state machine drives everything: `currentMenuItem` indexes `menuItems[]` = `{"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source"}` (8 items — all `% MENU_ITEM_COUNT` wraparound arithmetic must stay in sync with this count; `MENU_ITEM_COUNT` is defined in `main.h`). `inSettingsMode` selects whether the screen shows the menu carousel or the settings view for the current item. Branching on menu item is done by **string comparison** (`menuItems[currentMenuItem] == "Bass"`) rather than an enum.
+Отдельно лежит **`IR_REMOTE_CODES.md`** — таблица кодов кнопок текущего (и старого, уже неиспользуемого) ИК-пульта с протоколом/адресом/командой для каждой кнопки; сверяться с ней при добавлении новых кнопок в `hardware_settings.h`/`remote_control.cpp`.
 
-### Two independent input paths feed the same state
-- **Rotary encoder** (`encoder.cpp`): read via interrupt on both pins (`CHANGE`), using Oleg Mazurov's state-table algorithm so fast rotation can't skip steps; `checkEncoderButton()` is polled every `loop()` iteration for the push-button.
-- **IR remote** (`remote_control.cpp`): interrupt-driven. `IR_ISR()` (attached on `IR_PIN`, `FALLING`) feeds a `NecDecoder`; `handleRemoteInput()` in `loop()` acts on the decoded command codes.
+## Архитектура
 
-Both paths converge on the same redraw functions (`drawMenu()`, `drawToggleSwitch()`, `drawArrowIndicator()`) and the same motor/relay/animation side effects — when changing behavior for a menu item, **both input paths need the change applied in parallel** (the logic is duplicated between `handleRemoteInput()` in `remote_control.cpp` and the encoder-handling block in `main.cpp`'s `loop()`).
+### Модель состояния
+Единая глобальная машина состояний управляет всем: `currentMenuItem` — индекс в `menuItems[]` = `{"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source"}` (8 пунктов — вся арифметика с `% MENU_ITEM_COUNT` должна оставаться синхронной с этим количеством; `MENU_ITEM_COUNT` определён в `main.h`). `inSettingsMode` переключает, что показывать: карусель пунктов меню или экран настройки текущего пункта. Ветвление по пункту меню всюду идёт через **сравнение строк** (`menuItems[currentMenuItem] == "Bass"`), а не через enum.
 
-### Display
-`U8g2lib`, hardware SPI, `U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI`, owned by `display_logic.cpp`. CS/DC/RESET are software-selectable (`DISPLAY_CS_PIN`/`DISPLAY_DC_PIN`/`DISPLAY_RESET_PIN` in `hardware_settings.h`, currently 10/9/12), but SCK/MOSI are fixed hardware-SPI pins on the Mega (52/51) and cannot be moved in code.
+### Два независимых источника ввода питают одно и то же состояние
+- **Поворотный энкодер** (`encoder.cpp`): читается по прерыванию на обоих пинах (`CHANGE`) через таблицу состояний Олега Мазурова, чтобы быстрое вращение не пропускало шаги; `checkEncoderButton()` опрашивается каждую итерацию `loop()` для кнопки.
+- **ИК-пульт** (`remote_control.cpp`): библиотека `IRremote`, приём таймерный (не по внешнему прерыванию, которое раньше использовал самодельный `NecDecoder`), декодирование опрашивается через `IrReceiver.decode()`/`resume()` внутри `handleRemoteInput()`, которая сама вызывается из `loop()` в нескольких местах (см. ниже "ИК-пульт").
 
-### Motors (Bass, High, Volume)
-Two different driver interfaces, both in `motor_driver_logic.cpp`:
-- `motorControl()` — single direction pin + single PWM pin, used for Motor1 (Bass) and Motor2 (High). Assumes an L298N-style board, but only `IN1`/`IN3` are wired — `IN2`/`IN4` are not defined/connected in code, so true reverse rotation is not correctly achieved yet (both direction pins would need to be driven, one inverted from the other).
-- `motorControl2()` — dual direction pin + dual PWM pin, used for Motor3 (Volume). Matches a BTS7960/IBT-2-style driver (`RPWM`/`LPWM` + enables).
+Оба пути сходятся к одним и тем же функциям перерисовки (`drawMenu()`, `drawToggleSwitch()`, `drawArrowIndicator()` и т.д.) и одним и тем же побочным эффектам на моторы/реле/анимацию — **при изменении поведения пункта меню правь оба пути параллельно** (логика продублирована между `handleRemoteInput()` в `remote_control.cpp` и блоком обработки энкодера в `loop()` в `main.cpp`). Это дублирование теперь распространяется и на память между циклами питания: если добавляешь новую настройку, которую нужно сохранять в EEPROM, не забудь, что сохранение вызывается явно из `remote_control.cpp` (сейчас питание переключается только с пульта — у физической кнопки питания нет, только у Bypass).
 
-### Potentiometer position feedback (Bass/High/Volume)
-`motor_position.cpp` reads a feedback potentiometer per knob (`BASS_POT_PIN`/`HIGH_POT_PIN`/`VOLUME_POT_PIN`, all defined in `hardware_settings.h`) so the real physical position can be shown on screen — separate from `settings[]`, which is the *commanded* target driving the motor. Volume's pot is a **logarithmic-taper** pot with a noisy wiper, which drove this implementation:
+### Дисплей
+`U8g2lib`, аппаратный SPI, `U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI`, всё в `display_logic.cpp`. CS/DC/RESET — любые свободные цифровые пины (`DISPLAY_CS_PIN`/`DISPLAY_DC_PIN`/`DISPLAY_RESET_PIN` в `hardware_settings.h`, сейчас 10/9/12), но SCK/MOSI — фиксированные аппаратные пины SPI на Mega (52/51), их в коде не поменять.
 
-1. **Oversampling** — 64 consecutive `analogRead()` samples are averaged per call (`readPotPercent()`) to cut ADC/wiper noise, done fresh each time (no cross-call state), so there's no lag behind real movement.
-2. **Calibration tables, not formulas** — `bassPotCalRaw[]`/`bassPotCalValue[]`, `highPotCalRaw[]`/`highPotCalValue[]`, and `volumePotCalRaw[]`/`volumePotCalPercent[]` (all in `hardware_settings.h`) hold manually-measured `(raw ADC, physical value)` pairs; `potRawToPercent()` linearly interpolates between them (clamping outside the measured range, with a small "snap" tolerance at 0dB/min/max so exact endpoints are reachable — see `*_POT_*_SNAP_RAW` constants). An earlier attempt at Volume used a closed-form log10 correction assuming a textbook audio-taper law; it didn't match this specific pot (a measured physical 50% read back as 42%), so it was replaced with real calibration points.
-3. **Live refresh** — `main.cpp`'s `loop()` calls `drawArrowIndicator()` every 200ms while `inSettingsMode` and the current item is Bass/High/Volume, independent of encoder/IR events, so the position keeps updating as the motor (or a hand) moves the knob. The same block also drives the NeoPixel ring for that item, and updates all three rings every 200ms regardless of which menu item is selected (so the rings stay live even while browsing the menu).
+### Индикаторы Mute/Bypass — на всех экранах
+`drawStatusIndicators()` (`display_logic.cpp`) рисует маленькие надписи "mute" (правый верхний угол, `MUTE_INDICATOR_X`/`Y`) и "bypass" (левый верхний угол, `BYPASS_INDICATOR_X`/`Y`) — вызывается из **каждой** функции отрисовки экрана (`drawMenu()`, `drawToggleSwitch()`, `drawArrowIndicator()`, `drawDimmerScreen()`, `drawColorScreen()`, `drawSourceScreen()`) прямо перед `u8g2.sendBuffer()`. Раньше эти надписи рисовались только в `drawMenu()` — из-за этого переключение Mute, пока пользователь сидел внутри пункта меню, было не видно (никакого подтверждения на экране), и второе нажатие фактически выключало Mute обратно, создавая впечатление "кнопка не сработала с первого раза". Из-за этого же `IR_MUTE` в `remote_control.cpp` теперь не всегда вызывает `drawMenu()` — вместо этого перерисовывает **тот экран, что открыт сейчас** (та же диспетчеризация по `menuItems[currentMenuItem]`, что и во входе в настройки через `IR_ENTER`), иначе перерисовка меню поверх экрана настройки — тот самый "скачок в карусель и обратно", пока следующая случайная перерисовка не восстановит нужный экран.
 
-If recalibrating: read the `<Bass/High/Volume> pot raw: X -> Y<dB/%> (shown: Z<dB/%>)` line from Serial at known physical stops and update the relevant pair of arrays in `hardware_settings.h`; keep the raw arrays strictly ascending.
+На экране `drawArrowIndicator()` (Bass/High/Volume) надпись "bypass" может слегка визуально пересекаться с кружком-индикатором положения ручки (оба в левом верхнем углу) — если на реальном экране выглядит плохо, надо развести позиции в `hardware_settings.h`.
 
-### NeoPixel rings (Bass, High, Volume)
-`neopixel.cpp` drives three rings (12 LEDs each, 2 unused at the bottom — wiring-dependent index order lives in `hardware_settings.h`). Volume fills like a single-ended level meter (`updateVolumeRing()`, 0-100%). Bass/High are two-sided around a 0dB center (`renderDbRing()`, -10..+10dB): the center pair is green and always lit, breathing through a brightness ramp (`zeroBlinkBrightness()`) whenever the value re-enters the zero zone; the rest of the ring lights in the selected `Color` palette entry toward whichever side the value has moved. Overall ring brightness is the `Dimmer` menu item (`applyRingDimmer()`); the active (non-green) color is the `Color` menu item (`applyRingColorScheme()`, palette in `hardware_settings.h`).
+### Анимации-индикаторы пунктов меню — шаблон для новых (см. `bass_volume_high_animation.h`/`.cpp`)
+
+Кадры берутся из экспорта `wokwi.com/animator` (формат Adafruit GFX — бит 7 самый левый пиксель; из экспорта нужен только массив `frames[][N]`, остальной boilerplate — `Adafruit_SSD1306`/`display.*` — не подходит проекту и выбрасывается). Модуль под новую анимацию — по образцу `boot_animation.cpp`/`mute_animation.cpp`, но с **двумя** функциями отрисовки вместо одной:
+
+1. **`drawXAnim(x, y)`** — рисует текущий кадр (со сдвигом битов через `reverseBits()`, тот же приём что в `boot_animation.cpp`) в **уже очищенный** буфер. Только для вызова изнутри полноэкранной функции отрисовки (`drawMenu()`/`drawArrowIndicator()`/и т.п. в `display_logic.cpp`) — та сама делает `clearBuffer()`+…+`sendBuffer()`.
+2. **`animateXIconPartial(x, y)`** — для непрерывного "кручения" пока пользователь просто сидит на экране без действий. **Не** дёргает полноэкранную функцию отрисовки по таймеру — вместо этого чистит только регион иконки (`setDrawColor(0)` + `drawBox()`, т.к. `drawXBM()` не чистит фон сам — прозрачен для нулевых бит), рисует новый кадр, и шлёт по SPI **только тайлы под иконкой** через `u8g2.updateDisplayArea(tx, ty, tw, th)` (координаты в тайлах — пиксели/8, не забыть округление вверх на границах) — не весь буфер (`sendBuffer()` шлёт все 1024 байта).
+
+Обе функции делят один и тот же `static currentFrame`/`lastFrameChange` (внутренние, на уровне файла, не внутри каждой функции) — иначе кадр "прыгает"/сбрасывается при переключении между полной и частичной отрисовкой.
+
+**Почему не просто дёргать полноэкранную отрисовку по таймеру:** так и было сделано в первой версии (`main.cpp` каждые N мс вызывал `drawMenu()` целиком) — работало визуально, но регулярно ломало навигацию с ИК-пульта: полная передача экрана (1024 байта) иногда "перебивала" передачу от только что нажатой Right/Left, и переключение пункta не отображалось с первого нажатия (нужно было 2-5, в зависимости от частоты). Подтверждено через Serial и сравнение с энкодером: сама навигация (currentMenuItem) обрабатывается верно каждый раз без потерь, и через энкодер (без ИК) экран обновляется всегда корректно независимо от частоты — то есть дело не в приёме ИК, а именно в конфликте двух полных передач на дисплей. Ни throttling частоты, ни гарантированный минимальный зазор между перерисовками (`DISPLAY_REDRAW_MIN_GAP_MS`) не убрали проблему полностью при высокой частоте — помогло только само уменьшение объёма передаваемых данных через частичное обновление тайлов.
+
+**Куда подключать:**
+- `drawXAnim()` — в подходящую функцию `display_logic.cpp` (`drawMenu()` для карусели меню, или конкретный экран настройки), перед `drawStatusIndicators()`/`sendBuffer()`, с условием на нужный пункт меню.
+- `animateXIconPartial()` — в `loop()` (`main.cpp`), без всякого таймера на уровне вызова (сама функция внутри пропускает свой ход, если недавно была любая другая передача на дисплей — сверяется с `lastMenuDrawTime()` из `display_logic.h` и собственным `lastPartialUpdate`), с тем же условием на активный пункт меню/экран и `!inSettingsMode`/`!powerOff` (что применимо).
+- Позиция и тайминг — для иконок карусели меню это уже готовые общие константы `MENU_ICON_X`/`_Y`/`_FRAME_DELAY_MS` в `hardware_settings.h` (одна и та же позиция для всех — виден только один пункт за раз, отдельные константы на каждую анимацию не нужны). Для чего-то другого (не иконка карусели, например полноэкранная анимация) — свой префикс, по схеме `<ПРЕФИКС>_ANIM_X`/`_Y`/`_FRAME_DELAY_MS` (см. `MUTE_ANIM_*`/`UNMUTE_ANIM_*`).
+
+### Моторы (Bass, High, Volume)
+Два разных интерфейса драйвера, оба в `motor_driver_logic.cpp`:
+- `motorControl()` — один провод направления + один PWM, используется для Motor1 (Bass) и Motor2 (High). Расчёт на плату уровня L298N, но подключены только `IN1`/`IN3` — `IN2`/`IN4` в коде не заданы, поэтому настоящий реверс пока не полностью корректен (нужно было бы вести оба провода направления, один инвертированно от другого).
+- `motorControl2()` — два провода направления + два PWM, используется для Motor3 (Volume). Соответствует плате уровня BTS7960/IBT-2 (`RPWM`/`LPWM` + enable).
+
+### Автовозврат/автонаведение моторов (seek-механизм)
+Кроме прямого ручного управления (`motorControl()`/`motorControl2()` по командам энкодера/пульта), у Bass/High/Volume есть общий паттерн "довести ручку до цели самостоятельно, пока обратная связь потенциометра не совпадёт с целью в пределах допуска":
+
+- **Bass/High** — `requestBassSeek(targetRaw)`/`requestHighSeek(targetRaw)` задают произвольную raw-цель (не только 0dB); `requestBassHighRecenter()` — тонкая обёртка с целью 0dB (`bassZeroRaw()`/`highZeroRaw()`), вызывается при каждом переключении Bypass в любую сторону (см. `triggerBypassAnim()`) и при восстановлении сохранённого положения из EEPROM при включении питания. `updateBassHighRecenter()` крутит мотор к текущей цели, вызывается из `loop()` (пока `!powerOff`). Допуск — `MOTOR_RECENTER_RAW_EPSILON` (специально уже, чем зона "снапа" к 0dB на экране — иначе мотор останавливается на краю зоны снапа, не докручивая пару градусов до истинного нуля).
+- **Volume** — тот же принцип, но по % (не raw): `requestVolumeSeek(targetPercent)`/`updateVolumeSeek()`, допуск `VOLUME_SEEK_EPSILON_PERCENT`. Используется, чтобы Volume сам доехал до `VOLUME_POWERON_TARGET_PERCENT` при включении питания.
+- **Отмена ручным управлением** — `cancelBassRecenter()`/`cancelHighRecenter()`/`cancelVolumeSeek()` вызываются в каждом месте, где пользователь сам крутит энкодер или жмёт Up/Down на пульте для соответствующей ручки, — иначе автовозврат продолжает бороться с ручным управлением на следующей итерации `loop()`.
+- **Блокирующий вариант** — `seekBassHighVolumeToZeroBlocking()` крутит все три мотора к нулю (0dB/0dB/0%) и не отдаёт управление, пока не доедут либо не истечёт таймаут `MOTOR_ZERO_TIMEOUT_MS` (предохранитель от заклинившего потенциометра/упора). Используется **только** при выключении питания — моторы должны физически оказаться на нуле ДО того, как реле обесточат систему, а не когда-нибудь потом в фоне через обычный `loop()`. Внутри цикла отдельно перерисовываются кольца Bass/High/Volume (`renderDbRing()`/`updateVolumeRing()`) — обычная перерисовка в `main.cpp` в это время не выполняется (мы внутри вложенного блокирующего вызова, а не в `loop()`), поэтому без этого кольца бы "замерли" на середине движения к нулю.
+
+Автовозврат — это фоновое поведение, не привязанное к тому, открыт ли сейчас соответствующий экран настройки: `updateBassHighRecenter()`/`updateVolumeSeek()` вызываются из `loop()` независимо от `inSettingsMode`, продолжая крутить мотор даже если пользователь в это время смотрит на другой пункт меню.
+
+### Обратная связь по потенциометру (Bass/High/Volume)
+`motor_position.cpp` читает по одному потенциометру обратной связи на ручку (`BASS_POT_PIN`/`HIGH_POT_PIN`/`VOLUME_POT_PIN`, все в `hardware_settings.h`), чтобы показывать на экране настоящее физическое положение — отдельно от `settings[]`, которое хранит *командную* цель, толкающую мотор. У потенциометра Volume — **логарифмическая** дорожка с шумной подвижной частью, из-за чего:
+
+1. **Передискретизация** — 64 подряд идущих `analogRead()` усредняются на каждый вызов (`readPotPercent()`), без состояния между вызовами (без задержки отклика на реальное движение).
+2. **Калибровочные таблицы, а не формулы** — `bassPotCalRaw[]`/`bassPotCalValue[]`, `highPotCalRaw[]`/`highPotCalValue[]`, `volumePotCalRaw[]`/`volumePotCalPercent[]` (все в `hardware_settings.h`) хранят вручную замеренные пары (raw ADC, физическое значение); `potRawToPercent()` линейно интерполирует между ними (с зажимом за пределами замеренного диапазона и небольшим допуском "снапа" у 0dB/минимума/максимума, чтобы точные крайние значения были достижимы — см. `*_POT_*_SNAP_RAW`). Более ранняя попытка для Volume использовала замкнутую формулу log10 по учебному закону аудио-дорожки — не совпала с конкретным экземпляром потенциометра (физические 50% читались как 42%), поэтому заменена реальными калибровочными точками.
+3. **Живое обновление** — `loop()` в `main.cpp` вызывает `drawArrowIndicator()` каждые 200мс, пока `inSettingsMode` и текущий пункт — Bass/High/Volume, независимо от событий энкодера/пульта, чтобы положение обновлялось по мере движения мотора (или руки). Тот же блок обновляет NeoPixel-кольцо этого пункта и обновляет все три кольца каждые 200мс независимо от выбранного пункта меню (кольца живые даже при простом просматривании меню), пока система не в Standby (см. `powerOff` ниже).
+
+Если нужна перекалибровка: прочитать строку `<Bass/High/Volume> pot raw: X -> Y<dB/%> (shown: Z<dB/%>)` из Serial на известных физических положениях и обновить соответствующую пару массивов в `hardware_settings.h`; массивы raw должны оставаться строго возрастающими.
+
+### NeoPixel-кольца (Bass, High, Volume)
+`neopixel.cpp` управляет тремя кольцами (по 12 светодиодов, 2 нижних не используются — порядок индексов, зависящий от проводки, в `hardware_settings.h`). Volume заливается как одностороннний индикатор уровня (`updateVolumeRing()`, 0-100%). Bass/High — двусторонняя шкала вокруг центра 0dB (`renderDbRing()`, -10..+10dB): центральная пара всегда горит зелёным, "дышит" через рампу яркости (`zeroBlinkBrightness()`) при каждом повторном входе в нулевую зону; остальные светодиоды загораются выбранным в `Color` цветом в сторону, куда сдвинулось значение. Общая яркость колец — пункт меню `Dimmer` (`applyRingDimmer()`); активный (не зелёный) цвет — пункт меню `Color` (`applyRingColorScheme()`, палитра в `hardware_settings.h`).
 
 ### Bypass
-`settings[4]` is the Bypass on/off flag. It can be toggled three ways — the dedicated physical button (`checkBypassButton()` in `relay.cpp`), the "Bypass" menu item via encoder, or via IR remote — and all three paths call the same two functions: `applyBypassState()` (relay + indicator LED, `relay.cpp`) and `triggerBypassAnim()` (starts the Bass/High ring animation, `animation_logic.cpp`). While that animation is playing, `main.cpp`'s `loop()` skips the normal dB-ring redraw for Bass/High so the animation isn't immediately overwritten. `drawMenu()` shows a small "bypass" label top-left while `settings[4] == 1` (mirrors the "mute" label top-right for `isMuted`); both labels' font/position are in `hardware_settings.h`.
+`settings[4]` — флаг включён/выключен Bypass. Переключается тремя путями — физическая кнопка (`checkBypassButton()` в `relay.cpp`), пункт меню "Bypass" через энкодер, через ИК-пульт — и все три пути вызывают одни и те же две функции: `applyBypassState()` (реле + индикаторный светодиод, `relay.cpp`) и `triggerBypassAnim()` (запускает анимацию колец Bass/High и автовозврат к 0dB, `animation_logic.cpp`). Пока анимация играет, `loop()` в `main.cpp` пропускает обычную перерисовку dB-колец для Bass/High, чтобы анимация не перезатиралась немедленно.
 
-### Relays
-All relays are **active-HIGH** (`digitalWrite(..., HIGH)` = energized/on) — this was flipped from the original active-LOW wiring when the relay modules were swapped. Standby/VU-Meter/LED are tied to the global power sequence (`powerOnDevices()`/`powerOffDevices()` in `on_off_logic.cpp`), and VU-Meter/LED/Bypass are also individually toggleable from their menu items. Source is mutually-exclusive across its three relays (`applySourceSelection()`). Mute is switched directly by a dedicated IR remote button (`IR_MUTE`), independent of menu navigation — note `isMuted` is not resynced with the relay state during `powerOnDevices()`, so it can drift out of sync across a power-off/power-on cycle.
+`applyBypassState()` управляет не только индикаторным светодиодом (`BYPASS_LED_PIN`, горит когда Bypass ВЫКЛЮЧЕН), но и отдельным реле `RELAY_PIN_LED` — оно физически привязано к состоянию Bypass (включается вместе с ним), а не является самостоятельным пунктом меню (несмотря на название "LED", это не тот же светодиод, что `BYPASS_LED_PIN`).
 
-`powerOffDevices()`/`powerOnDevices()` explicitly drive every relay and LED pin `OUTPUT` + `LOW`/`HIGH` rather than releasing them to `INPUT` — this was a deliberate fix so power-off is deterministic (floating pins can't be relied on to read as "off" — that depended on the old relay modules' own pull resistors, which no longer apply after the active-HIGH swap).
+Режим анимации (`bypassAnimMode` в `animation_logic.h`): `0` — анимации нет, `1` — разовая заливка кольца целиком за `BYPASS_FILL_TOTAL_MS` (Bypass только выключился, не привязана к реальному значению — чисто визуальное подтверждение), `2` — центр несколько раз "дышит" красным, затем держится ровно ярко-красным и остаётся так **всё время**, пока Bypass включён (заканчивает этот режим только следующий `triggerBypassAnim()` при выключении). В режиме 2 "жёлтые" светодиоды продолжают отражать настоящее текущее положение ручки — гаснут по мере автовозврата к нулю.
 
-### Pin map reference
-See `hardware_settings.h` for the full pin assignment (encoder, motors, relays, LEDs, IR receiver, NeoPixel rings, potentiometer feedback). Comments in Russian throughout the codebase describe each pin's purpose.
+Важный нюанс: при восстановлении Bypass=включён программно (после включения питания, см. ниже) режим 2 ставится **напрямую** (`bypassAnimMode = 2; bypassAnimStart = millis();` в `powerOnDevices()`), а не через `triggerBypassAnim()` — та ещё и запросила бы автовозврат к 0dB, что перезаписало бы восстановление Bass/High из EEPROM. Если этот прямой сеттинг забыть при доработке `powerOnDevices()`, после включения при ранее включённом Bypass центр колец окажется обычным зелёным (как при выключенном Bypass), а не красным — баг именно так и проявлялся до фикса.
+
+### ИК-пульт
+Декодирование — через библиотеку `IRremote` (`remote_control.cpp`), не самодельный `NecDecoder` (тот понимал только протокол NEC). После переобучения универсального пульта все его кнопки шлют один протокол **RC5** с одним и тем же адресом `IR_ADDRESS` (`0x18`) — коды команд для каждой кнопки в `hardware_settings.h` (`IR_RIGHT`/`IR_LEFT`/`IR_ENTER`/`IR_MUTE`/`IR_POWER`/`IR_UP`/`IR_DOWN`), полная таблица (включая старые, уже не используемые коды NEC/Samsung до переобучения) — в `IR_REMOTE_CODES.md`.
+
+`handleRemoteInput()` вызывается из `loop()` в **трёх** местах: безусловно в начале, внутри блока обновления колец (каждые 200мс) и внутри блока живого обновления экрана настройки Bass/High/Volume (тоже каждые 200мс) — `IRremote` не увидит следующий кадр, пока явно не вызван `resume()`, а усреднение потенциометров в этих блоках занимает заметное время (до ~15-20мс), поэтому пульт проверяется сразу после, а не только в начале `loop()`.
+
+Внутри `handleRemoteInput()`:
+1. **Фильтр по протоколу/адресу** — если декодированный кадр не `Protocol=RC5, Address=0x18`, он отбрасывается без обработки (`IrReceiver.resume(); return;`). Это не только шум (`Protocol=UNKNOWN`), но и защита от наводки — например, от самих моторов, — которая может случайно задекодироваться как что-то похожее на валидный кадр другого протокола/адреса. Раньше проверялся только `Command`, из-за чего наводка с совпавшим по случайности командным полем (например `0x0`, как у `IR_ENTER`) могла спровоцировать ложное срабатывание (в частности — самопроизвольный выход из настроек в меню).
+2. **Repeat-кадры** — при удержании кнопки RC5 шлёт повторные кадры примерно раз в 114мс (`IRDATA_FLAGS_IS_REPEAT`). Для одноразовых действий (навигация и т.п.) повторы игнорируются. Исключения: `IR_POWER` (нужно отличать быстрое нажатие от предполагаемого удержания — хотя сейчас код реагирует на любое не-repeat нажатие сразу, без долгого удержания) и `IR_UP`/`IR_DOWN` (нужны повторы, чтобы мотор двигался непрерывно, пока держишь кнопку).
+3. **Таймаут простоя мотора** (`SLIDER_MOTOR_IDLE_TIMEOUT` в `hardware_settings.h`, сейчас 260мс) — общий с энкодером, останавливает мотор Bass/High/Volume, если давно не было новых команд ни от энкодера, ни от пульта. Должен быть заметно больше периода повторов RC5 (~114мс) — иначе обычный джиттер таймингов останавливает мотор между кадрами, и он дёргается вместо плавного движения при удержании Up/Down. Более того, таймаут должен переживать не только обычный джиттер, но и изредка целиком потерянный повторный кадр (гэп в этом случае ~228мс) — история значений в коде (было 120мс, потом 200мс, потом 260мс) — это именно постепенный подбор запаса под эти два случая.
+4. **Защита от "бита" по кнопке Power** — изредка пульт (или наводка) шлёт по одному физическому нажатию два самостоятельных **не-repeat** кадра подряд. Без защиты второй кадр воспринимается как отдельное нажатие и сразу переключает питание обратно — выглядит как "кнопка не сработала с первого раза". Защита — статический `lastPowerActionTime` с 800мс окном игнорирования повторных срабатываний `IR_POWER`, независимо от repeat-флага.
+5. **`IR_MUTE`** — переключает `isMuted` и реле `RELAY_PIN_MUTE` сразу, безусловно, независимо от навигации по меню (`isMuted` не привязан к пункту меню). См. выше про перерисовку текущего экрана вместо всегда-`drawMenu()`.
+
+### Включение/выключение питания
+`on_off_logic.cpp` — единственный владелец флага `powerOff` и последовательности; переключается **только с ИК-пульта** (`IR_POWER` в `remote_control.cpp`), отдельной физической кнопки питания нет (есть только физическая кнопка Bypass, не общего питания).
+
+**Выключение** (в `remote_control.cpp`, ветка `else` у `IR_POWER`, до `powerOff = true`):
+1. Гасятся LED-индикаторы пунктов меню Bass/High/Volume.
+2. `saveBypassStateOnShutdown()` — состояние Bypass сохраняется в EEPROM **всегда**, независимо от значения.
+3. `saveBassHighPositionOnShutdown()` — положение Bass/High (raw ADC) сохраняется в EEPROM **только если Bypass выключен** (если включён — Bass/High всё равно принудительно на 0dB, запоминать нечего). Важно, что это происходит ДО того, как моторы физически сдвинутся к нулю — иначе к моменту записи там уже было бы 0dB/0%, а не настоящее пользовательское положение.
+4. `seekBassHighVolumeToZeroBlocking()` — Bass/High едут к 0dB, Volume — к 0%, блокирующе (см. "Автовозврат/автонаведение моторов" выше). Только теперь, когда моторы физически на месте, идёт остальная последовательность:
+5. Небольшая задержка, анимация "POWER OFF" (`powerOffScreen()`), 3-секундная пауза, и наконец `powerOffDevices()` — обесточивает всё остальное (реле, светодиоды, дисплей, гасит кольца, сбрасывает `inSettingsMode`/`bypassAnimMode`/все seek-флаги).
+
+`powerOffDevices()` явно переводит каждый пин реле/светодиода в `OUTPUT` + `LOW`/`HIGH`, а не отпускает их в `INPUT` — это осознанное решение, чтобы выключение было детерминированным (плавающие пины не гарантируют читаться как "выключено" — это работало только на старых релейных модулях с собственными резисторами, которые больше не действуют после смены на активно-HIGH проводку). Он же принудительно выходит из режима настроек (`inSettingsMode = false; resetCursor();`) — иначе, если питание выключили прямо с открытым экраном настройки Bass/High/Volume, `loop()` в `main.cpp` продолжал бы каждые 200мс перерисовывать кольцо этого пункта (тот блок живого обновления не проверяет `powerOff`), и оно зажигалось бы заново сразу после того, как `powerOffDevices()` его погасил.
+
+**Включение** (`powerOnDevices()`, вызывается из `IR_POWER` когда `powerOff == true`):
+1. Дисплей включается, играет анимация "POWER ON" (`powerOnScreen()`).
+2. LED-индикаторы пунктов меню и реле Standby/VU-Meter включаются, Mute — принудительно выключается.
+3. `settings[4]` (Bypass) восстанавливается из EEPROM (`loadSavedBypassState()`) — раньше здесь всегда стоял `0` (Bypass выключен по умолчанию при каждом включении); теперь восстанавливается, как было перед выключением. Если восстановлен включённым — напрямую ставится `bypassAnimMode = 2` (см. "Bypass" выше, важный нюанс про порядок).
+4. `applySourceSelection()` — восстанавливает выбранный источник из `settings[7]` (это никогда не терялось, `settings[]` не сбрасывается при выключении).
+5. `requestVolumeSeek(VOLUME_POWERON_TARGET_PERCENT)` — Volume **всегда** едет к фиксированным 30% при включении, независимо от Bypass и от того, что было в EEPROM (для Volume никакая память положения не хранится вообще, только целевой % при включении).
+6. Если в EEPROM есть валидные данные положения Bass/High (`loadSavedBassHighPosition()`, т.е. Bypass был выключен на момент выключения) — `requestBassSeek()`/`requestHighSeek()` с сохранёнными raw-значениями.
+
+Восстановление Bass/High/Volume — фоновое (через `updateBassHighRecenter()`/`updateVolumeSeek()` в `loop()`), не блокирует появление меню.
+
+**EEPROM** (только в `on_off_logic.cpp`, через `<EEPROM.h>`) — два независимых слота по разным адресам, чтобы не пересекаться:
+- `EEPROM_BYPASS_STATE_ADDR` (0) — `struct SavedBypassState { uint16_t magic; uint8_t bypassOn; }`, магическое число `0xB1A5` отличает "уже когда-то записано" от чистой/незаписанной EEPROM (там по умолчанию `0xFF`). Пишется при **каждом** выключении.
+- `EEPROM_BASS_HIGH_POSITION_ADDR` (8) — `struct SavedBassHighPosition { uint16_t magic; int bassRaw; int highRaw; }`, магическое число `0xB055`. Пишется при выключении **только если Bypass выключен**; стирается (`clearSavedBassHighPosition()`, magic сбрасывается в `0`) сразу при включении Bypass во время работы (`triggerBypassAnim()`, если `settings[4] == 1` — раз ручки принудительно "прижаты" к 0dB, старое положение больше не актуально).
+
+Оба слота пишутся через `EEPROM.put()`, который сам, побайтно, сравнивает с уже записанным значением и не трогает физическую EEPROM, если ничего не изменилось (снижает износ ячеек при частых циклах включения/выключения без реального изменения положения ручек).
+
+### Реле
+Все реле **активны по HIGH** (`digitalWrite(..., HIGH)` = включено) — это было изменено с исходной активно-LOW проводки при замене релейных модулей. Standby/VU-Meter/реле "LED"-эффекта Bypass привязаны к глобальной последовательности питания (`powerOnDevices()`/`powerOffDevices()` в `on_off_logic.cpp`); VU-Meter и Bypass также переключаются индивидуально из своих пунктов меню. Source — взаимоисключающее переключение по трём реле (`applySourceSelection()`). Mute переключается напрямую отдельной кнопкой пульта (`IR_MUTE`), независимо от навигации по меню — `isMuted` не восстанавливается из EEPROM и не ресинхронизируется с состоянием реле в `powerOnDevices()` (та явно выключает реле Mute при каждом включении), так что `isMuted` может разойтись с реле только если что-то напрямую подвинет реле не через этот флаг — на практике этого не происходит, но при добавлении новых путей управления Mute это стоит держать в уме.
+
+### Пин-карта
+См. `hardware_settings.h` для полного назначения пинов (энкодер, моторы, реле, светодиоды, ИК-приёмник, NeoPixel-кольца, обратная связь потенциометров). Комментарии на русском по всему коду описывают назначение каждого пина.
