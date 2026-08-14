@@ -66,6 +66,24 @@ int colorMenuIndex() {
   return 0; // Не должно случаться — "Color" всегда есть в menuItems[]
 }
 
+int sourceMenuIndex() {
+  for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    if (menuItems[i] == "Source") {
+      return i;
+    }
+  }
+  return 0; // Не должно случаться — "Source" всегда есть в menuItems[]
+}
+
+int vuMeterMenuIndex() {
+  for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    if (menuItems[i] == "VU Meter") {
+      return i;
+    }
+  }
+  return 0; // Не должно случаться — "VU Meter" всегда есть в menuItems[]
+}
+
 // Перерисовывает экран, который сейчас должен быть виден по inSettingsMode/currentMenuItem —
 // нужно, чтобы после отпускания Up/Down (глобальный шорткат громкости, см. beginVolumeOverlay())
 // вернуть на экран именно то, что было до него (карусель или конкретный экран настройки)

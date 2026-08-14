@@ -31,10 +31,18 @@ void handleRemoteInput() {
     IrReceiver.resume(); // Можно принимать следующий кадр — irCommand уже сохранён
 
     // Долгое нажатие шлёт кучу repeat-кадров подряд, пока держишь кнопку — для
-    // одноразовых действий (навигация и т.п.) это не новая команда, гасим. Но для
-    // Power они нужны, чтобы отслеживать длительность удержания (см. case IR_POWER),
-    // а для Up/Down — чтобы мотор двигался непрерывно, пока держишь кнопку (см. ниже)
-    if (isRepeat && irCommand != IR_POWER && irCommand != IR_UP && irCommand != IR_DOWN) {
+    // одноразовых действий гасим их у большинства кнопок. Но для Power они нужны, чтобы
+    // отслеживать длительность удержания (см. case IR_POWER), для Up/Down — чтобы мотор
+    // двигался непрерывно, пока держишь кнопку, а для Right/Left/Enter/Set — потому что
+    // пульт-обучалка не всегда корректно повторяет toggle-бит RC5 между отдельными
+    // нажатиями одной кнопки: настоящее новое нажатие иногда прилетает с флагом repeat,
+    // и раньше такой кадр тут же отбрасывался (жалоба "не всегда срабатывает с первого
+    // раза" на навигации, устойчиво воспроизводилась даже после переобучения пульта).
+    // Пропускаем их в switch — там у каждой такой кнопки свой антидребезг по времени
+    // (LAST_*_ACTION_TIME), который и отличает настоящее новое нажатие от кадров
+    // реально удерживаемой кнопки
+    if (isRepeat && irCommand != IR_POWER && irCommand != IR_UP && irCommand != IR_DOWN
+        && irCommand != IR_RIGHT && irCommand != IR_LEFT && irCommand != IR_ENTER && irCommand != IR_SET) {
       return;
     }
 
@@ -53,8 +61,18 @@ void handleRemoteInput() {
       return;
     }
 
+    // Общий антидребезг для Right/Left — теперь через них проходят и repeat-кадры (см.
+    // комментарий выше), нужно отличить настоящее удержание (кадры каждые ~114мс) от
+    // одного осознанного нажатия. 200мс — тот же порядок, что у Enter/Mute/Set ниже
+    static unsigned long lastRightActionTime = 0;
+    static unsigned long lastLeftActionTime = 0;
+
     switch (irCommand) {
       case IR_RIGHT:
+        if (millis() - lastRightActionTime <= 200) {
+          break;
+        }
+        lastRightActionTime = millis();
         Serial.println("Right button pressed"); // Отладочный вывод
         if (!inSettingsMode) {
           currentMenuItem = (currentMenuItem + 1) % MENU_ITEM_COUNT;
@@ -86,14 +104,16 @@ void handleRemoteInput() {
             applyRingColorScheme();
             drawColorScreen(settings[currentMenuItem]);
             saveSettings();
-          } else if (menuItems[currentMenuItem] == "Source") {
-            settings[currentMenuItem] = (settings[currentMenuItem] + 1) % SOURCE_COUNT;
-            applySourceSelection();
-            drawSourceScreen(settings[currentMenuItem]);
           }
+          // Source больше не переключается Right/Left — теперь это список (drawSourceScreen()),
+          // навигация Up/Down, см. case IR_UP/IR_DOWN ниже
         }
         break;
       case IR_LEFT:
+        if (millis() - lastLeftActionTime <= 200) {
+          break;
+        }
+        lastLeftActionTime = millis();
         Serial.println("Left button pressed"); // Отладочный вывод
         if (!inSettingsMode) {
           currentMenuItem = (currentMenuItem - 1 + MENU_ITEM_COUNT) % MENU_ITEM_COUNT;
@@ -125,11 +145,8 @@ void handleRemoteInput() {
             applyRingColorScheme();
             drawColorScreen(settings[currentMenuItem]);
             saveSettings();
-          } else if (menuItems[currentMenuItem] == "Source") {
-            settings[currentMenuItem] = (settings[currentMenuItem] - 1 + SOURCE_COUNT) % SOURCE_COUNT;
-            applySourceSelection();
-            drawSourceScreen(settings[currentMenuItem]);
           }
+          // Source больше не переключается Right/Left — см. комментарий в case IR_RIGHT
         }
         break;
       case IR_ENTER: {
@@ -245,6 +262,12 @@ void handleRemoteInput() {
             // трогают Volume вообще (см. main.h у dimmerEditingDisplay)
             dimmerEditingDisplay = false;
             drawDimmerScreen();
+          } else if (menuItems[currentMenuItem] == "Source") {
+            // Source — теперь список (drawSourceScreen()), Up двигает подсветку вверх
+            // (к предыдущему источнику); Right/Left тут больше не действуют
+            settings[currentMenuItem] = (settings[currentMenuItem] - 1 + SOURCE_COUNT) % SOURCE_COUNT;
+            applySourceSelection();
+            drawSourceScreen(settings[currentMenuItem]);
           }
         } else {
           // На карусели (не в настройках) Up/Down крутят Volume прямо отсюда, без захода
@@ -278,6 +301,11 @@ void handleRemoteInput() {
             // Down — выбрать нижнюю строку (яркость дисплея)
             dimmerEditingDisplay = true;
             drawDimmerScreen();
+          } else if (menuItems[currentMenuItem] == "Source") {
+            // Down — двигает подсветку вниз (к следующему источнику), симметрично IR_UP
+            settings[currentMenuItem] = (settings[currentMenuItem] + 1) % SOURCE_COUNT;
+            applySourceSelection();
+            drawSourceScreen(settings[currentMenuItem]);
           }
         } else {
           beginVolumeOverlay();
@@ -336,6 +364,9 @@ void handleRemoteInput() {
             digitalWrite(LED_VOLUME_PIN, LOW);
             saveBypassStateOnShutdown(); // Восстанавливается при следующем включении, независимо от значения
             saveBassHighPositionOnShutdown(); // Пока моторы ещё не сдвинуты — иначе тут же перезапишет 0dB/0%
+            saveSourceStateOnShutdown(); // Переживает настоящее отключение питания, не только Standby
+            saveVuMeterStateOnShutdown(); // Аналогично Source/Bypass
+            saveDimmerColorSettings(); // Уже пишется на каждое изменение (see main.cpp), но лишний раз не помешает
             seekBassHighVolumeToZeroBlocking(); // Сначала все моторы едут в ноль...
             delay(100); // Небольшая задержка для гарантированного отключения
             powerOffScreen();

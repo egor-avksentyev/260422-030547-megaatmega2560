@@ -50,11 +50,13 @@ extern bool dimmerEditingDisplay;
 // входе в Dimmer. Пульт (Left/Right/Up/Down) этот флаг не проверяет — там всё как раньше
 extern bool dimmerRowLocked;
 
-// Индексы "Dimmer"/"Color" в menuItems[]/settings[] — нужны там, где currentMenuItem не
-// гарантированно указывает на них (например при загрузке/сохранении в EEPROM, см.
-// on_off_logic.cpp)
+// Индексы "Dimmer"/"Color"/"Source"/"VU Meter" в menuItems[]/settings[] — нужны там, где
+// currentMenuItem не гарантированно указывает на них (например при загрузке/сохранении в
+// EEPROM, см. on_off_logic.cpp)
 int dimmerMenuIndex();
 int colorMenuIndex();
+int sourceMenuIndex();
+int vuMeterMenuIndex();
 
 #define MENU_ITEM_COUNT 8
 

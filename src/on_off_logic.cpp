@@ -100,6 +100,60 @@ void loadDimmerColorSettings() {
   settings[colorMenuIndex()] = data.ringColorIndex;
 }
 
+// --- Долговременная память выбранного источника (Source, EEPROM) ---
+// Как Bypass выше — сохраняется ТОЛЬКО при выключении питания (не на каждое изменение,
+// в отличие от Dimmer/Color, см. saveDimmerColorSettings()), восстанавливается при
+// следующем включении (см. powerOnDevices())
+struct SavedSourceState {
+  uint16_t magic;
+  uint8_t sourceIndex;
+};
+#define SAVED_SOURCE_MAGIC 0x50A5
+
+void saveSourceStateOnShutdown() {
+  SavedSourceState data = {SAVED_SOURCE_MAGIC, (uint8_t)settings[sourceMenuIndex()]};
+  EEPROM.put(EEPROM_SOURCE_STATE_ADDR, data);
+}
+
+// Ограничивает возвращаемый индекс текущим SOURCE_COUNT — если прошивку с бОльшим числом
+// источников когда-нибудь заменят на версию с меньшим, старое сохранённое значение не
+// должно уйти за пределы sourceNames[]/реле
+static bool loadSavedSourceState(int* sourceIndexOut) {
+  SavedSourceState data;
+  EEPROM.get(EEPROM_SOURCE_STATE_ADDR, data);
+  if (data.magic != SAVED_SOURCE_MAGIC) {
+    return false;
+  }
+  *sourceIndexOut = constrain(data.sourceIndex, 0, SOURCE_COUNT - 1);
+  return true;
+}
+
+// --- Долговременная память состояния VU Meter (EEPROM) ---
+// Как Source выше — сохраняется ТОЛЬКО при выключении питания, восстанавливается при
+// следующем включении (см. powerOnDevices())
+struct SavedVuMeterState {
+  uint16_t magic;
+  uint8_t vuMeterOn;
+};
+#define SAVED_VU_METER_MAGIC 0x7EE7
+
+void saveVuMeterStateOnShutdown() {
+  SavedVuMeterState data = {SAVED_VU_METER_MAGIC, (uint8_t)(settings[vuMeterMenuIndex()] != 0 ? 1 : 0)};
+  EEPROM.put(EEPROM_VU_METER_STATE_ADDR, data);
+}
+
+// true (включено) для самого первого включения, пока в EEPROM ничего не записано —
+// сохраняет прежнее поведение "VU Meter включён по умолчанию" (в отличие от Bypass,
+// который по умолчанию выключен)
+static bool loadSavedVuMeterState() {
+  SavedVuMeterState data;
+  EEPROM.get(EEPROM_VU_METER_STATE_ADDR, data);
+  if (data.magic != SAVED_VU_METER_MAGIC) {
+    return true;
+  }
+  return data.vuMeterOn != 0;
+}
+
 void powerOffScreen() {
   playBootAnimation();
 }
@@ -169,11 +223,19 @@ void powerOnDevices() {
   pinMode(RELAY_PIN_LED, OUTPUT);
   pinMode(RELAY_PIN_MUTE, OUTPUT);
   digitalWrite(RELAY_PIN_STANDBY, HIGH); // Включаем Standby
-  digitalWrite(RELAY_PIN_VU_METER, HIGH); // Включаем VU Meter
   digitalWrite(RELAY_PIN_MUTE, LOW); // Оставляем Mute выключенным
+
+  settings[vuMeterMenuIndex()] = loadSavedVuMeterState() ? 1 : 0; // Восстанавливаем VU Meter, как было перед выключением
+  digitalWrite(RELAY_PIN_VU_METER, settings[vuMeterMenuIndex()] == 1 ? HIGH : LOW);
+
   settings[4] = loadSavedBypassState() ? 1 : 0; // Восстанавливаем Bypass, как было перед выключением
   applyBypassState(); // Синхронизирует и реле, и индикаторный светодиод
-  applySourceSelection(); // Восстанавливаем выбранный источник из settings[7]
+
+  int savedSourceIndex;
+  if (loadSavedSourceState(&savedSourceIndex)) {
+    settings[sourceMenuIndex()] = savedSourceIndex; // Переживает настоящее отключение питания (не только Standby)
+  }
+  applySourceSelection();
 
   if (settings[4] == 1) {
     // Bypass восстановлен включённым — центр колец Bass/High должен быть красным (как при

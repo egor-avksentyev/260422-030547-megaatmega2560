@@ -113,6 +113,10 @@
 #define EEPROM_DIMMER_COLOR_ADDR 16 // Яркость колец (LED)/дисплея (Display) и цвет колец (Color) —
 // в отличие от двух слотов выше, пишется сразу при КАЖДОМ изменении значения, не только при
 // выключении питания (см. saveSettings()/saveDimmerColorSettings() в on_off_logic.cpp)
+#define EEPROM_SOURCE_STATE_ADDR 24 // Выбранный источник (Source) — как Bypass/Bass-High выше,
+// пишется только при выключении питания (см. saveSourceStateOnShutdown() в on_off_logic.cpp)
+#define EEPROM_VU_METER_STATE_ADDR 32 // Состояние VU Meter — тот же паттерн, что у Source/Bypass выше:
+// пишется только при выключении питания (см. saveVuMeterStateOnShutdown() в on_off_logic.cpp)
 
 // --- Потенциометры обратной связи положения ручек (+5V/GND по краям, средний вывод сюда) ---
 #define BASS_POT_PIN A9
@@ -216,7 +220,7 @@ struct RingColor {
   const char* name;
   uint8_t r, g, b;
 };
-#define RING_COLOR_COUNT 21
+#define RING_COLOR_COUNT 41
 const RingColor ringColorPalette[RING_COLOR_COUNT] = {
   {"White", 255, 255, 255},
   {"Orange", 255, 69, 0},
@@ -239,6 +243,27 @@ const RingColor ringColorPalette[RING_COLOR_COUNT] = {
   {"Salmon", 255, 110, 90},
   {"SkyBlue", 0, 170, 255},
   {"Lavender", 190, 150, 255},
+  // +20 — RING_COLOR_DEFAULT (Yellow, индекс 2) не трогали, так что стартовый цвет не съехал
+  {"Crimson", 220, 20, 60},
+  {"Chartreuse", 127, 255, 0},
+  {"Teal", 0, 128, 128},
+  {"Maroon", 176, 0, 32},
+  {"Navy", 0, 60, 160},
+  {"Olive", 150, 150, 0},
+  {"Orchid", 200, 90, 190},
+  {"Peach", 255, 170, 130},
+  {"Rose", 255, 0, 90},
+  {"Emerald", 0, 200, 90},
+  {"Sapphire", 15, 90, 200},
+  {"Ruby", 224, 17, 95},
+  {"Bronze", 200, 130, 60},
+  {"Steel", 100, 140, 170},
+  {"Plum", 160, 70, 140},
+  {"Mustard", 210, 180, 20},
+  {"Periwinkle", 140, 140, 255},
+  {"Fuchsia", 255, 0, 200},
+  {"Aquamarine", 60, 230, 180},
+  {"Tangerine", 255, 120, 20},
 };
 #define RING_COLOR_DEFAULT 2 // Yellow — ближе всего к прежнему тёплому жёлтому
 
@@ -388,6 +413,9 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define TOGGLE_STATE_FONT u8g2_font_ncenB10_tr // Подпись "On"/"Off" справа от дорожки
 #define TOGGLE_STATE_TEXT_X_OFFSET 62 // Смещение от TOGGLE_SWITCH_X — позиция фиксирована, не скачет между сторонами
 #define TOGGLE_STATE_TEXT_Y_OFFSET 16 // Смещение от TOGGLE_SWITCH_Y
+// Подчёркивание названия пункта меню — см. DIMMER_LABEL_UNDERLINE_Y_OFFSET выше. Общее и
+// для VU Meter, и для Bypass (тот же экран, drawToggleSwitch())
+#define TOGGLE_LABEL_UNDERLINE_Y_OFFSET 3
 
 // --- Экран настроек Dimmer — 2 строки (яркость колец и яркость дисплея), между которыми
 // переключаются Up/Down на пульте (см. IR_UP/IR_DOWN в remote_control.cpp); Left/Right
@@ -406,6 +434,13 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define DIMMER_ROW_HIGHLIGHT_PAD_X 3
 #define DIMMER_ROW_HIGHLIGHT_PAD_Y 2
 #define DIMMER_ROW_HIGHLIGHT_RADIUS 3
+// Точка слева от активной строки (доп. индикатор, помимо подсветки) — X считается от
+// DIMMER_ROW_X назад (в сторону левого края экрана) на эту величину
+#define DIMMER_ROW_DOT_RADIUS 1
+#define DIMMER_ROW_DOT_X_OFFSET 7
+// Подчёркивание названия пункта меню (menuItems[currentMenuItem]) — линия по ширине
+// самого текста (u8g2.getStrWidth()), не во весь экран; отступ вниз от baseline текста
+#define DIMMER_LABEL_UNDERLINE_Y_OFFSET 3
 
 // --- Экран настроек Color ---
 #define COLOR_LABEL_FONT u8g2_font_ncenB12_tr
@@ -415,20 +450,37 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define COLOR_VALUE_X 15
 #define COLOR_VALUE_Y 55
 // Квадратик-образец справа от названия цвета — монохромный экран не может показать сам
-// цвет, поэтому это упорядоченная дизеринг-заливка (2x2 матрица Байера) по яркости
-// (r*299+g*587+b*114)/1000 выбранного цвета: тёмные цвета — редкие точки, светлые — почти
-// сплошная заливка. См. drawBrightnessSwatch() в display_logic.cpp
+// цвет, поэтому это дизеринг-заливка по яркости (r*299+g*587+b*114)/1000 выбранного
+// цвета: тёмные цвета — редкие точки, светлые — почти сплошная заливка. Узор точек —
+// свой, но ФИКСИРОВАННЫЙ у каждого цвета (randomSeed() от самих r/g/b) — см.
+// drawBrightnessSwatch() в display_logic.cpp. COLOR_SWATCH_Y поднят так, чтобы нижняя
+// грань квадрата (Y + COLOR_SWATCH_SIZE) не срезалась низом экрана (высота 64)
 #define COLOR_SWATCH_X 90
-#define COLOR_SWATCH_Y 42
+#define COLOR_SWATCH_Y 36
 #define COLOR_SWATCH_SIZE 24
+// Подчёркивание названия пункта меню — см. DIMMER_LABEL_UNDERLINE_Y_OFFSET выше
+#define COLOR_LABEL_UNDERLINE_Y_OFFSET 3
 
 // --- Экран настроек Source ---
+// --- Экран настроек Source — список ВСЕХ источников (не только текущего), активный
+// подсвечен скруглённым прямоугольником (см. drawHighlightedRow() в display_logic.cpp,
+// общий приём с Dimmer) — растёт вниз по SOURCE_COUNT строк, а не фиксирован на 3/4 ---
 #define SOURCE_LABEL_FONT u8g2_font_ncenB10_tr
-#define SOURCE_LABEL_X 33
-#define SOURCE_LABEL_Y 35
-#define SOURCE_VALUE_FONT u8g2_font_ncenB08_tr
-#define SOURCE_VALUE_X 15
-#define SOURCE_VALUE_Y 55
+#define SOURCE_LABEL_X 55
+
+#define SOURCE_LABEL_Y 30
+#define SOURCE_LIST_FONT u8g2_font_ncenB08_tr
+#define SOURCE_LIST_X 10
+#define SOURCE_LIST_Y_START 25 // Y (baseline) первой строки списка
+#define SOURCE_LIST_LINE_HEIGHT 11 // Шаг между строками — при SOURCE_COUNT=4 последняя строка на 58, укладывается в экран высотой 64
+#define SOURCE_ROW_HIGHLIGHT_PAD_X 3
+#define SOURCE_ROW_HIGHLIGHT_PAD_Y 2
+#define SOURCE_ROW_HIGHLIGHT_RADIUS 3
+// Точка слева от активного источника — см. DIMMER_ROW_DOT_* выше (тот же приём)
+#define SOURCE_ROW_DOT_RADIUS 1
+#define SOURCE_ROW_DOT_X_OFFSET 7
+// Подчёркивание названия пункта меню — см. DIMMER_LABEL_UNDERLINE_Y_OFFSET выше
+#define SOURCE_LABEL_UNDERLINE_Y_OFFSET 3
 
 // --- Название текущего пункта меню (крупный текст по центру) на экране drawMenu() ---
 // _tr, а не _tf — пункты меню это обычный ASCII (Bass/High/Volume/...), полный юникод-набор

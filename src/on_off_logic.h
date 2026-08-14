@@ -31,3 +31,13 @@ void saveBypassStateOnShutdown();
 // питания; loadSettings() (main.cpp) вызывает загрузку в самом начале setup()
 void saveDimmerColorSettings();
 void loadDimmerColorSettings();
+
+// Долговременная (EEPROM) память выбранного источника (Source) — как Bypass/Bass-High
+// выше, пишется ТОЛЬКО при выключении питания (не на каждое изменение, в отличие от
+// Dimmer/Color) и восстанавливается сама powerOnDevices() при следующем включении.
+// Снаружи нужно только вызвать перед выключением
+void saveSourceStateOnShutdown();
+
+// Долговременная (EEPROM) память состояния VU Meter — тот же паттерн, что у Source/Bypass
+// выше (пишется только при выключении, восстанавливается сама powerOnDevices())
+void saveVuMeterStateOnShutdown();

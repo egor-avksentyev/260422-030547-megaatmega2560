@@ -27,6 +27,13 @@ static void drawStatusIndicators() {
   }
 }
 
+// Подчёркивает уже напечатанный по (x, y) текущим шрифтом текст — короткая линия по
+// реальной ширине текста (u8g2.getStrWidth()), не во весь экран. Используется для
+// названия пункта меню на экранах VU Meter/Color/Source/Dimmer
+static void drawTitleUnderline(int x, int y, const char* text, int yOffset) {
+  u8g2.drawHLine(x, y + yOffset, u8g2.getStrWidth(text));
+}
+
 static unsigned long lastDisplayTransferTime = 0;
 static unsigned long lastPartialDisplayTransferTime = 0;
 
@@ -114,9 +121,12 @@ void drawToggleSwitch(bool state) {
   u8g2.setFont(TOGGLE_FONT);
   u8g2.clearBuffer();
 
-  // Отображаем название пункта меню
+  // Отображаем название пункта меню — подчёркнуто у обоих (VU Meter и Bypass, экран общий),
+  // см. TOGGLE_LABEL_UNDERLINE_Y_OFFSET. menuItems[currentMenuItem].c_str(), а не
+  // захардкоженная строка — экран общий на два разных названия
   u8g2.setCursor(TOGGLE_LABEL_X, TOGGLE_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(TOGGLE_LABEL_X, TOGGLE_LABEL_Y, menuItems[currentMenuItem].c_str(), TOGGLE_LABEL_UNDERLINE_Y_OFFSET);
 
   // "Pill"-переключатель — позиция/размер через TOGGLE_* в hardware_settings.h. OFF:
   // дорожка пустая (только контур), бегунок закрашен слева. ON: дорожка залита целиком,
@@ -243,25 +253,29 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
   u8g2.sendBuffer();
 }
 
-// Рисует одну строку экрана Dimmer ("LED 20%" / "Display 80%"). Активная строка (та,
-// что сейчас крутит Left/Right, см. dimmerEditingDisplay/dimmerRowLocked в main.h) —
-// вместо "> " перед текстом теперь скруглённая подсветка позади него с инвертированным
-// текстом поверх (setDrawColor(0)), размер подсветки — по реальной ширине строки
-// (u8g2.getStrWidth()) и ascent/descent текущего шрифта, а не подогнан на глаз
-static void drawDimmerRow(int y, const char* text, bool isActive) {
+// Рисует одну строку списка настроек ("LED 20%", "AUX", ...) с подсветкой, если это
+// активный/выбранный вариант — скруглённый залитый прямоугольник позади текста с
+// инвертированным текстом поверх (setDrawColor(0)), вместо старого "> " перед текстом,
+// плюс отдельная точка слева от строки (доп. индикатор выбора). Размер подсветки — по
+// реальной ширине строки (u8g2.getStrWidth()) и ascent/descent ТЕКУЩЕГО шрифта (вызывающий
+// код должен успеть setFont() до вызова), а не подогнан на глаз. Общий приём для списков
+// в настройках — используется и в Dimmer, и в Source
+static void drawHighlightedRow(int x, int y, const char* text, bool isActive, int padX, int padY, int radius, int dotRadius, int dotXOffset) {
   if (isActive) {
     int textWidth = u8g2.getStrWidth(text);
-    int boxX = DIMMER_ROW_X - DIMMER_ROW_HIGHLIGHT_PAD_X;
-    int boxY = y - u8g2.getAscent() - DIMMER_ROW_HIGHLIGHT_PAD_Y;
-    int boxW = textWidth + DIMMER_ROW_HIGHLIGHT_PAD_X * 2;
-    int boxH = (u8g2.getAscent() - u8g2.getDescent()) + DIMMER_ROW_HIGHLIGHT_PAD_Y * 2;
-    u8g2.drawRBox(boxX, boxY, boxW, boxH, DIMMER_ROW_HIGHLIGHT_RADIUS);
+    int boxX = x - padX;
+    int boxY = y - u8g2.getAscent() - padY;
+    int boxW = textWidth + padX * 2;
+    int boxH = (u8g2.getAscent() - u8g2.getDescent()) + padY * 2;
+    u8g2.drawRBox(boxX, boxY, boxW, boxH, radius);
     u8g2.setDrawColor(0);
-    u8g2.setCursor(DIMMER_ROW_X, y);
+    u8g2.setCursor(x, y);
     u8g2.print(text);
     u8g2.setDrawColor(1);
+    int dotY = y - (u8g2.getAscent() + u8g2.getDescent()) / 2;
+    u8g2.drawDisc(x - dotXOffset, dotY, dotRadius);
   } else {
-    u8g2.setCursor(DIMMER_ROW_X, y);
+    u8g2.setCursor(x, y);
     u8g2.print(text);
   }
 }
@@ -274,17 +288,22 @@ void drawDimmerScreen() {
 
   u8g2.setCursor(DIMMER_LABEL_X, DIMMER_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(DIMMER_LABEL_X, DIMMER_LABEL_Y, "Dimmer", DIMMER_LABEL_UNDERLINE_Y_OFFSET);
 
   // Две строки — яркость колец и яркость дисплея; какая активна — dimmerEditingDisplay,
   // переключается Up/Down на пульте (или вращением энкодера, пока не подтверждена кликом)
   u8g2.setFont(DIMMER_ROW_FONT);
   char ledRow[16];
   snprintf(ledRow, sizeof(ledRow), "LED %d%%", settings[currentMenuItem]);
-  drawDimmerRow(DIMMER_ROW1_Y, ledRow, !dimmerEditingDisplay);
+  drawHighlightedRow(DIMMER_ROW_X, DIMMER_ROW1_Y, ledRow, !dimmerEditingDisplay,
+    DIMMER_ROW_HIGHLIGHT_PAD_X, DIMMER_ROW_HIGHLIGHT_PAD_Y, DIMMER_ROW_HIGHLIGHT_RADIUS,
+    DIMMER_ROW_DOT_RADIUS, DIMMER_ROW_DOT_X_OFFSET);
 
   char displayRow[16];
   snprintf(displayRow, sizeof(displayRow), "Display %d%%", displayBrightness);
-  drawDimmerRow(DIMMER_ROW2_Y, displayRow, dimmerEditingDisplay);
+  drawHighlightedRow(DIMMER_ROW_X, DIMMER_ROW2_Y, displayRow, dimmerEditingDisplay,
+    DIMMER_ROW_HIGHLIGHT_PAD_X, DIMMER_ROW_HIGHLIGHT_PAD_Y, DIMMER_ROW_HIGHLIGHT_RADIUS,
+    DIMMER_ROW_DOT_RADIUS, DIMMER_ROW_DOT_X_OFFSET);
 
   drawStatusIndicators();
 
@@ -296,15 +315,23 @@ void applyDisplayBrightness() {
 }
 
 // Квадратик-образец яркости выбранного цвета — монохромный экран не может показать сам
-// цвет (r/g/b), поэтому это упорядоченный дизеринг по 2x2 матрице Байера: чем выше
-// яркость (r*299+g*587+b*114)/1000, тем плотнее точки внутри рамки, вплоть до почти
-// сплошной заливки у самых ярких цветов (White и т.п.)
+// цвет (r/g/b), поэтому это дизеринг: каждый пиксель зажигается с вероятностью
+// luminance/255 (random(256) < luminance), где luminance = (r*299+g*587+b*114)/1000 —
+// чем выше яркость, тем плотнее точки, вплоть до почти сплошной заливки у самых ярких
+// цветов (White и т.п.). Узор точек — свой, но ФИКСИРОВАННЫЙ у каждого цвета (не
+// перегенерируется на каждый redraw): randomSeed() от самих r/g/b (не от индекса в
+// ringColorPalette[] — так узор переживает переупорядочивание палитры) даёт один и тот же
+// узор каждый раз при выборе этого цвета, и он отличается от узора других цветов —
+// значит, цвета можно узнавать по узору точек, а не только по плотности заливки.
+// Multiplicative hash (2654435761 — множитель Кнута) разносит соседние по таблице r/g/b,
+// чтобы у похожих по яркости соседних цветов не совпадали и узоры
 static void drawBrightnessSwatch(int x, int y, int size, uint8_t r, uint8_t g, uint8_t b) {
-  static const uint8_t BAYER_2X2[2][2] = {{0, 128}, {192, 64}};
+  uint32_t seed = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+  randomSeed(seed * 2654435761UL);
   uint16_t luminance = ((uint16_t)r * 299 + (uint16_t)g * 587 + (uint16_t)b * 114) / 1000;
   for (int yy = 0; yy < size; yy++) {
     for (int xx = 0; xx < size; xx++) {
-      if (luminance > BAYER_2X2[yy % 2][xx % 2]) {
+      if ((uint16_t)random(256) < luminance) {
         u8g2.drawPixel(x + xx, y + yy);
       }
     }
@@ -320,6 +347,7 @@ void drawColorScreen(int colorIndex) {
 
   u8g2.setCursor(COLOR_LABEL_X, COLOR_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(COLOR_LABEL_X, COLOR_LABEL_Y, "Color", COLOR_LABEL_UNDERLINE_Y_OFFSET);
 
   u8g2.setFont(COLOR_VALUE_FONT);
   u8g2.setCursor(COLOR_VALUE_X, COLOR_VALUE_Y);
@@ -341,10 +369,19 @@ void drawSourceScreen(int sourceIndex) {
 
   u8g2.setCursor(SOURCE_LABEL_X, SOURCE_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(SOURCE_LABEL_X, SOURCE_LABEL_Y, "Source", SOURCE_LABEL_UNDERLINE_Y_OFFSET);
 
-  u8g2.setFont(SOURCE_VALUE_FONT);
-  u8g2.setCursor(SOURCE_VALUE_X, SOURCE_VALUE_Y);
-  u8g2.print(sourceNames[sourceIndex]);
+  // Список ВСЕХ источников (не только текущего) — активный подсвечен (см.
+  // drawHighlightedRow() выше), чтобы сразу видеть остальные варианты и куда крутить,
+  // а не только текущее значение. Растёт вниз сам по SOURCE_COUNT — не привязан к
+  // конкретному числу источников
+  u8g2.setFont(SOURCE_LIST_FONT);
+  for (int i = 0; i < SOURCE_COUNT; i++) {
+    int y = SOURCE_LIST_Y_START + i * SOURCE_LIST_LINE_HEIGHT;
+    drawHighlightedRow(SOURCE_LIST_X, y, sourceNames[i], i == sourceIndex,
+      SOURCE_ROW_HIGHLIGHT_PAD_X, SOURCE_ROW_HIGHLIGHT_PAD_Y, SOURCE_ROW_HIGHLIGHT_RADIUS,
+      SOURCE_ROW_DOT_RADIUS, SOURCE_ROW_DOT_X_OFFSET);
+  }
 
   drawStatusIndicators();
 
