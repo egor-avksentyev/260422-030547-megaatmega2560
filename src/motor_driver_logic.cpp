@@ -85,11 +85,6 @@ void requestHighSeek(int targetRaw) {
   highSeeking = abs(raw - targetRaw) > recenterEpsilonFor(targetRaw, highZeroRaw(), HIGH_POT_ZERO_SNAP_RAW);
 }
 
-void requestBassHighRecenter() {
-  requestBassSeek(bassZeroRaw());
-  requestHighSeek(highZeroRaw());
-}
-
 void cancelBassRecenter() {
   bassSeeking = false;
 }

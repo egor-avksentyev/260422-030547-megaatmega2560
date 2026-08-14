@@ -66,6 +66,11 @@
 #define ENCODER_B_PIN 20 // INT3 — обязательно пин с аппаратным прерыванием (алгоритм Мазурова)
 #define BUTTON_PIN 8
 #define DOUBLE_CLICK_THRESHOLD_MS 300 // Порог для обнаружения двойного нажатия кнопки энкодера
+// Внутри пункта меню Dimmer у кнопки энкодера особое поведение (см. checkEncoderButton() в
+// encoder.cpp): короткий клик переключает между "выбором строки LED/Display" и "редактированием
+// её значения" (dimmerRowLocked в main.h), а не выходит из настроек, как везде — поэтому выход
+// в карусель меню там требует зажать кнопку на этот срок
+#define DIMMER_EXIT_HOLD_MS 2000
 
 // Сколько валидных переходов таблицы Мазурова соответствуют одному физическому щелчку
 // энкодера. Раньше код считал только 1 фронт на щелчок, поэтому "1 щелчок = 1 encoderValue".
@@ -105,6 +110,13 @@
 // Два независимых слота EEPROM — разные адреса, чтобы не пересекались (см. on_off_logic.cpp):
 #define EEPROM_BYPASS_STATE_ADDR 0 // Состояние Bypass — сохраняется при КАЖДОМ выключении, восстанавливается при включении
 #define EEPROM_BASS_HIGH_POSITION_ADDR 8 // Положение Bass/High — только если Bypass был выключен
+#define EEPROM_DIMMER_COLOR_ADDR 16 // Яркость колец (LED)/дисплея (Display) и цвет колец (Color) —
+// в отличие от двух слотов выше, пишется сразу при КАЖДОМ изменении значения, не только при
+// выключении питания (см. saveSettings()/saveDimmerColorSettings() в on_off_logic.cpp)
+#define EEPROM_SOURCE_STATE_ADDR 24 // Выбранный источник (Source) — как Bypass/Bass-High выше,
+// пишется только при выключении питания (см. saveSourceStateOnShutdown() в on_off_logic.cpp)
+#define EEPROM_VU_METER_STATE_ADDR 32 // Состояние VU Meter — тот же паттерн, что у Source/Bypass выше:
+// пишется только при выключении питания (см. saveVuMeterStateOnShutdown() в on_off_logic.cpp)
 
 // --- Потенциометры обратной связи положения ручек (+5V/GND по краям, средний вывод сюда) ---
 #define BASS_POT_PIN A9
@@ -117,14 +129,15 @@
 #define RELAY_PIN_LED 26
 #define RELAY_PIN_MUTE 28
 // Реле переключения источника (пункт меню "Source") — взаимоисключающе, работает
-// только одно из трёх одновременно
+// только одно из четырёх одновременно
 #define SOURCE_RELAY_1_PIN 30
 #define SOURCE_RELAY_2_PIN 44
 #define SOURCE_RELAY_3_PIN 46
-#define SOURCE_COUNT 3
+#define SOURCE_RELAY_4_PIN 47
+#define SOURCE_COUNT 4
 // Названия источников для экрана (см. drawSourceScreen() в display_logic.cpp) — порядок
 // соответствует порядку переключения settings[7]/applySourceSelection() (relay.cpp)
-const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT"};
+const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT", "STREAMER"};
 // Сколько держится полноэкранный показ источника после нажатия Set на пульте (см.
 // beginSourceOverlay()/updateSourceOverlay() в main.cpp), прежде чем само вернуться туда,
 // где был экран до нажатия
@@ -207,7 +220,7 @@ struct RingColor {
   const char* name;
   uint8_t r, g, b;
 };
-#define RING_COLOR_COUNT 21
+#define RING_COLOR_COUNT 41
 const RingColor ringColorPalette[RING_COLOR_COUNT] = {
   {"White", 255, 255, 255},
   {"Orange", 255, 69, 0},
@@ -230,6 +243,27 @@ const RingColor ringColorPalette[RING_COLOR_COUNT] = {
   {"Salmon", 255, 110, 90},
   {"SkyBlue", 0, 170, 255},
   {"Lavender", 190, 150, 255},
+  // +20 — RING_COLOR_DEFAULT (Yellow, индекс 2) не трогали, так что стартовый цвет не съехал
+  {"Crimson", 220, 20, 60},
+  {"Chartreuse", 127, 255, 0},
+  {"Teal", 0, 128, 128},
+  {"Maroon", 176, 0, 32},
+  {"Navy", 0, 60, 160},
+  {"Olive", 150, 150, 0},
+  {"Orchid", 200, 90, 190},
+  {"Peach", 255, 170, 130},
+  {"Rose", 255, 0, 90},
+  {"Emerald", 0, 200, 90},
+  {"Sapphire", 15, 90, 200},
+  {"Ruby", 224, 17, 95},
+  {"Bronze", 200, 130, 60},
+  {"Steel", 100, 140, 170},
+  {"Plum", 160, 70, 140},
+  {"Mustard", 210, 180, 20},
+  {"Periwinkle", 140, 140, 255},
+  {"Fuchsia", 255, 0, 200},
+  {"Aquamarine", 60, 230, 180},
+  {"Tangerine", 255, 120, 20},
 };
 #define RING_COLOR_DEFAULT 2 // Yellow — ближе всего к прежнему тёплому жёлтому
 
@@ -315,42 +349,138 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 // --- Экран настроек Bass/High ---
 #define LABEL_FONT u8g2_font_ncenB08_tr
 #define LABEL_X 45
-#define LABEL_Y 25
+#define LABEL_Y 30
 #define VALUE_FONT u8g2_font_ncenB10_tr
 #define VALUE_X 85
-#define VALUE_Y 25
+#define VALUE_Y 30
 
 // --- Экран настроек Volume ---
 #define VOLUME_LABEL_FONT u8g2_font_ncenB08_tr
 #define VOLUME_LABEL_X 45
-#define VOLUME_LABEL_Y 25
+#define VOLUME_LABEL_Y 30
 #define VOLUME_VALUE_FONT u8g2_font_ncenB10_tr
 #define VOLUME_VALUE_X 95
-#define VOLUME_VALUE_Y 25
+#define VOLUME_VALUE_Y 30
 
-// --- Экран настроек Dimmer ---
-#define DIMMER_LABEL_FONT u8g2_font_ncenB14_tr
+// --- Общие элементы экрана Bass/High/Volume (drawArrowIndicator() в display_logic.cpp) —
+// кружок с стрелкой-указателем реального положения ручки, треугольники-индикаторы
+// направления вращения (показываются на пару кадров при вводе с энкодера/пульта) и
+// горизонтальный прогресс-бар снизу. Общие для всех трёх пунктов — своей позиции у
+// каждого нет, в отличие от LABEL_*/VALUE_* выше ---
+#define ARROW_CIRCLE_X 20 // Центр кружка — левая верхняя часть экрана
+#define ARROW_CIRCLE_Y 20
+#define ARROW_CIRCLE_RADIUS 14
+#define ARROW_NEEDLE_LENGTH 18 // Длиннее радиуса — стрелка выходит за пределы кружка
+
+// Треугольники-стрелочки вправо/влево (showArrowRight/showArrowLeft) — по 3 точки на
+// каждый, но Y одни и те же для обоих (только своя высота треугольника), а X считается от
+// "ближнего" к центру экрана края (_NEAR, на уровне TOP/BOTTOM) к "дальнему" острию (_FAR,
+// на уровне MID)
+#define ARROW_INDICATOR_Y_TOP 30
+#define ARROW_INDICATOR_Y_MID 35
+#define ARROW_INDICATOR_Y_BOTTOM 40
+#define ARROW_RIGHT_X_NEAR 110
+#define ARROW_RIGHT_X_FAR 120
+#define ARROW_LEFT_X_NEAR 40
+#define ARROW_LEFT_X_FAR 30
+
+// Горизонтальная линия-шкала и бегущий по ней прогресс-бар (положение потенциометра)
+#define PROGRESS_LINE_X 20
+#define PROGRESS_LINE_Y 45
+#define PROGRESS_LINE_WIDTH 88
+#define PROGRESS_BAR_X_MIN 20 // Левый край хода бегунка (соответствует минимуму шкалы)
+#define PROGRESS_BAR_X_MAX 108 // Правый край хода бегунка (соответствует максимуму шкалы)
+#define PROGRESS_BAR_Y 47
+#define PROGRESS_BAR_WIDTH 4
+#define PROGRESS_BAR_HEIGHT 12
+// Короткие засечки над шкалой на минимуме/центре/максимуме — читаемость (особенно
+// центра, 0dB для Bass/High) без разметки цифрами
+#define PROGRESS_TICK_HEIGHT 4
+
+// --- Экран настроек VU Meter/Bypass ("pill"-переключатель, drawToggleSwitch() в
+// display_logic.cpp) — скруглённая дорожка (drawRFrame/drawRBox, радиус = половина высоты)
+// с круглым бегунком (drawDisc), как на телефоне: OFF — дорожка пустая, бегунок слева;
+// ON — дорожка залита целиком, бегунок — "вырезанный" кружок с контуром справа (иначе на
+// монохромном экране бегунок слился бы с залитой дорожкой) ---
+#define TOGGLE_FONT u8g2_font_ncenB12_tr // Название пункта меню сверху
+#define TOGGLE_LABEL_X 20
+#define TOGGLE_LABEL_Y 30
+#define TOGGLE_SWITCH_X 30 // Левый верхний угол дорожки переключателя
+#define TOGGLE_SWITCH_Y 40
+#define TOGGLE_SWITCH_WIDTH 50
+#define TOGGLE_SWITCH_HEIGHT 20 // Радиус скругления дорожки/бегунка считается как половина этой высоты
+#define TOGGLE_KNOB_MARGIN 3 // Отступ бегунка от края дорожки (радиус бегунка = высота/2 - этот отступ)
+#define TOGGLE_STATE_FONT u8g2_font_ncenB10_tr // Подпись "On"/"Off" справа от дорожки
+#define TOGGLE_STATE_TEXT_X_OFFSET 62 // Смещение от TOGGLE_SWITCH_X — позиция фиксирована, не скачет между сторонами
+#define TOGGLE_STATE_TEXT_Y_OFFSET 16 // Смещение от TOGGLE_SWITCH_Y
+// Подчёркивание названия пункта меню — см. DIMMER_LABEL_UNDERLINE_Y_OFFSET выше. Общее и
+// для VU Meter, и для Bypass (тот же экран, drawToggleSwitch())
+#define TOGGLE_LABEL_UNDERLINE_Y_OFFSET 3
+
+// --- Экран настроек Dimmer — 2 строки (яркость колец и яркость дисплея), между которыми
+// переключаются Up/Down на пульте (см. IR_UP/IR_DOWN в remote_control.cpp); Left/Right
+// регулируют то значение, что выбрано. Активная строка отмечена скруглённой подсветкой
+// (инвертированный текст поверх неё) — см. drawDimmerScreen() в display_logic.cpp ---
+#define DIMMER_LABEL_FONT u8g2_font_ncenB12_tr
 #define DIMMER_LABEL_X 25
-#define DIMMER_LABEL_Y 20
-#define DIMMER_VALUE_FONT u8g2_font_ncenB10_tr
-#define DIMMER_VALUE_X 50
-#define DIMMER_VALUE_Y 45
+#define DIMMER_LABEL_Y 25
+#define DIMMER_ROW_FONT u8g2_font_ncenB08_tr
+#define DIMMER_ROW_X 10
+#define DIMMER_ROW1_Y 44 // Яркость колец (LED)
+#define DIMMER_ROW2_Y 62 // Яркость дисплея (Display)
+#define DISPLAY_BRIGHTNESS_DEFAULT_PERCENT 80 // Стартовая яркость дисплея — сбрасывается при каждом включении, как и Dimmer колец
+// Подсветка активной строки — размер считается по реальной ширине текста строки
+// (u8g2.getStrWidth()) + эти отступы, высота — по ascent/descent шрифта DIMMER_ROW_FONT
+#define DIMMER_ROW_HIGHLIGHT_PAD_X 3
+#define DIMMER_ROW_HIGHLIGHT_PAD_Y 2
+#define DIMMER_ROW_HIGHLIGHT_RADIUS 3
+// Точка слева от активной строки (доп. индикатор, помимо подсветки) — X считается от
+// DIMMER_ROW_X назад (в сторону левого края экрана) на эту величину
+#define DIMMER_ROW_DOT_RADIUS 1
+#define DIMMER_ROW_DOT_X_OFFSET 7
+// Подчёркивание названия пункта меню (menuItems[currentMenuItem]) — линия по ширине
+// самого текста (u8g2.getStrWidth()), не во весь экран; отступ вниз от baseline текста
+#define DIMMER_LABEL_UNDERLINE_Y_OFFSET 3
 
 // --- Экран настроек Color ---
-#define COLOR_LABEL_FONT u8g2_font_ncenB14_tr
-#define COLOR_LABEL_X 15
-#define COLOR_LABEL_Y 20
-#define COLOR_VALUE_FONT u8g2_font_ncenB10_tr
+#define COLOR_LABEL_FONT u8g2_font_ncenB12_tr
+#define COLOR_LABEL_X 33
+#define COLOR_LABEL_Y 35
+#define COLOR_VALUE_FONT u8g2_font_ncenB08_tr
 #define COLOR_VALUE_X 15
-#define COLOR_VALUE_Y 45
+#define COLOR_VALUE_Y 55
+// Квадратик-образец справа от названия цвета — монохромный экран не может показать сам
+// цвет, поэтому это дизеринг-заливка по яркости (r*299+g*587+b*114)/1000 выбранного
+// цвета: тёмные цвета — редкие точки, светлые — почти сплошная заливка. Узор точек —
+// свой, но ФИКСИРОВАННЫЙ у каждого цвета (randomSeed() от самих r/g/b) — см.
+// drawBrightnessSwatch() в display_logic.cpp. COLOR_SWATCH_Y поднят так, чтобы нижняя
+// грань квадрата (Y + COLOR_SWATCH_SIZE) не срезалась низом экрана (высота 64)
+#define COLOR_SWATCH_X 90
+#define COLOR_SWATCH_Y 36
+#define COLOR_SWATCH_SIZE 24
+// Подчёркивание названия пункта меню — см. DIMMER_LABEL_UNDERLINE_Y_OFFSET выше
+#define COLOR_LABEL_UNDERLINE_Y_OFFSET 3
 
 // --- Экран настроек Source ---
-#define SOURCE_LABEL_FONT u8g2_font_ncenB14_tr
-#define SOURCE_LABEL_X 15
-#define SOURCE_LABEL_Y 20
-#define SOURCE_VALUE_FONT u8g2_font_ncenB10_tr
-#define SOURCE_VALUE_X 15
-#define SOURCE_VALUE_Y 45
+// --- Экран настроек Source — список ВСЕХ источников (не только текущего), активный
+// подсвечен скруглённым прямоугольником (см. drawHighlightedRow() в display_logic.cpp,
+// общий приём с Dimmer) — растёт вниз по SOURCE_COUNT строк, а не фиксирован на 3/4 ---
+#define SOURCE_LABEL_FONT u8g2_font_ncenB10_tr
+#define SOURCE_LABEL_X 55
+
+#define SOURCE_LABEL_Y 30
+#define SOURCE_LIST_FONT u8g2_font_ncenB08_tr
+#define SOURCE_LIST_X 10
+#define SOURCE_LIST_Y_START 25 // Y (baseline) первой строки списка
+#define SOURCE_LIST_LINE_HEIGHT 11 // Шаг между строками — при SOURCE_COUNT=4 последняя строка на 58, укладывается в экран высотой 64
+#define SOURCE_ROW_HIGHLIGHT_PAD_X 3
+#define SOURCE_ROW_HIGHLIGHT_PAD_Y 2
+#define SOURCE_ROW_HIGHLIGHT_RADIUS 3
+// Точка слева от активного источника — см. DIMMER_ROW_DOT_* выше (тот же приём)
+#define SOURCE_ROW_DOT_RADIUS 1
+#define SOURCE_ROW_DOT_X_OFFSET 7
+// Подчёркивание названия пункта меню — см. DIMMER_LABEL_UNDERLINE_Y_OFFSET выше
+#define SOURCE_LABEL_UNDERLINE_Y_OFFSET 3
 
 // --- Название текущего пункта меню (крупный текст по центру) на экране drawMenu() ---
 // _tr, а не _tf — пункты меню это обычный ASCII (Bass/High/Volume/...), полный юникод-набор
@@ -372,5 +502,5 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 
 // --- Мелкий текстовый индикатор состояния Bypass (на всех экранах, не только drawMenu()) ---
 #define STATUS_INDICATOR_FONT u8g2_font_ncenB08_tr
-#define BYPASS_INDICATOR_X 100 // Правый верхний угол — раньше здесь была надпись "mute"
+#define BYPASS_INDICATOR_X 80 // Правый верхний угол — раньше здесь была надпись "mute"
 #define BYPASS_INDICATOR_Y 10

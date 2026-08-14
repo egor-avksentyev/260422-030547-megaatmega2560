@@ -13,10 +13,9 @@
 bool powerOff = false; // Флаг для состояния питания
 
 // --- Долговременная память положения Bass/High (EEPROM) ---
-// Сохраняется только если Bypass выключен при выключении питания (если включён, Bass/High
-// всё равно принудительно прижаты к 0dB — запоминать нечего), восстанавливается при
-// следующем включении (см. powerOnDevices()). Включение Bypass во время работы стирает
-// эти данные — раз ручки "зажаты" в 0dB, старое положение больше не актуально.
+// Сохраняется при КАЖДОМ выключении питания (независимо от Bypass — переключение Bypass
+// больше не двигает Bass/High физически, см. triggerBypassAnim() в animation_logic.cpp),
+// восстанавливается при следующем включении (см. powerOnDevices()).
 struct SavedBassHighPosition {
   uint16_t magic; // Отличает "данные есть" от чистой/незаписанной EEPROM — иначе неинициализированные 0xFF читались бы как случайное валидное положение
   int bassRaw;
@@ -25,19 +24,11 @@ struct SavedBassHighPosition {
 #define SAVED_POSITION_MAGIC 0xB055
 
 void saveBassHighPositionOnShutdown() {
-  if (settings[4] != 0) { // Bypass включён — нет смысла запоминать то, что и так съедет к 0dB
-    return;
-  }
   int bassRaw, highRaw;
   readBassPotPercent(&bassRaw);
   readHighPotPercent(&highRaw);
   SavedBassHighPosition data = {SAVED_POSITION_MAGIC, bassRaw, highRaw};
   EEPROM.put(EEPROM_BASS_HIGH_POSITION_ADDR, data); // Побайтно сравнивает с уже записанным и не трогает EEPROM, если ничего не изменилось
-}
-
-void clearSavedBassHighPosition() {
-  SavedBassHighPosition data = {0, 0, 0}; // magic=0 != SAVED_POSITION_MAGIC — читается как "данных нет"
-  EEPROM.put(EEPROM_BASS_HIGH_POSITION_ADDR, data);
 }
 
 static bool loadSavedBassHighPosition(int* bassRawOut, int* highRawOut) {
@@ -71,6 +62,96 @@ static bool loadSavedBypassState() {
   SavedBypassState data;
   EEPROM.get(EEPROM_BYPASS_STATE_ADDR, data);
   return (data.magic == SAVED_BYPASS_MAGIC) && (data.bypassOn != 0);
+}
+
+// --- Долговременная память настроек Dimmer/Color (EEPROM) ---
+// В отличие от двух блоков выше, эти три значения пишутся сразу при КАЖДОМ изменении (см.
+// saveSettings() в main.cpp), а не только при выключении питания — EEPROM.put сам сравнивает
+// побайтно и не трогает физическую ячейку, если значение не изменилось, так что частые
+// вызовы не изнашивают память сильнее, чем реальные изменения настройки
+struct SavedDimmerColorSettings {
+  uint16_t magic;
+  uint8_t ringDimmerPercent;
+  uint8_t displayBrightnessPercent;
+  uint8_t ringColorIndex;
+};
+#define SAVED_DIMMER_COLOR_MAGIC 0xD1C0
+
+void saveDimmerColorSettings() {
+  SavedDimmerColorSettings data = {
+    SAVED_DIMMER_COLOR_MAGIC,
+    (uint8_t)settings[dimmerMenuIndex()],
+    (uint8_t)displayBrightness,
+    (uint8_t)settings[colorMenuIndex()]
+  };
+  EEPROM.put(EEPROM_DIMMER_COLOR_ADDR, data);
+}
+
+// Не трогает settings[]/displayBrightness, если в EEPROM ничего не записано (magic не
+// совпал) — остаются значения по умолчанию, заданные в main.cpp
+void loadDimmerColorSettings() {
+  SavedDimmerColorSettings data;
+  EEPROM.get(EEPROM_DIMMER_COLOR_ADDR, data);
+  if (data.magic != SAVED_DIMMER_COLOR_MAGIC) {
+    return;
+  }
+  settings[dimmerMenuIndex()] = data.ringDimmerPercent;
+  displayBrightness = data.displayBrightnessPercent;
+  settings[colorMenuIndex()] = data.ringColorIndex;
+}
+
+// --- Долговременная память выбранного источника (Source, EEPROM) ---
+// Как Bypass выше — сохраняется ТОЛЬКО при выключении питания (не на каждое изменение,
+// в отличие от Dimmer/Color, см. saveDimmerColorSettings()), восстанавливается при
+// следующем включении (см. powerOnDevices())
+struct SavedSourceState {
+  uint16_t magic;
+  uint8_t sourceIndex;
+};
+#define SAVED_SOURCE_MAGIC 0x50A5
+
+void saveSourceStateOnShutdown() {
+  SavedSourceState data = {SAVED_SOURCE_MAGIC, (uint8_t)settings[sourceMenuIndex()]};
+  EEPROM.put(EEPROM_SOURCE_STATE_ADDR, data);
+}
+
+// Ограничивает возвращаемый индекс текущим SOURCE_COUNT — если прошивку с бОльшим числом
+// источников когда-нибудь заменят на версию с меньшим, старое сохранённое значение не
+// должно уйти за пределы sourceNames[]/реле
+static bool loadSavedSourceState(int* sourceIndexOut) {
+  SavedSourceState data;
+  EEPROM.get(EEPROM_SOURCE_STATE_ADDR, data);
+  if (data.magic != SAVED_SOURCE_MAGIC) {
+    return false;
+  }
+  *sourceIndexOut = constrain(data.sourceIndex, 0, SOURCE_COUNT - 1);
+  return true;
+}
+
+// --- Долговременная память состояния VU Meter (EEPROM) ---
+// Как Source выше — сохраняется ТОЛЬКО при выключении питания, восстанавливается при
+// следующем включении (см. powerOnDevices())
+struct SavedVuMeterState {
+  uint16_t magic;
+  uint8_t vuMeterOn;
+};
+#define SAVED_VU_METER_MAGIC 0x7EE7
+
+void saveVuMeterStateOnShutdown() {
+  SavedVuMeterState data = {SAVED_VU_METER_MAGIC, (uint8_t)(settings[vuMeterMenuIndex()] != 0 ? 1 : 0)};
+  EEPROM.put(EEPROM_VU_METER_STATE_ADDR, data);
+}
+
+// true (включено) для самого первого включения, пока в EEPROM ничего не записано —
+// сохраняет прежнее поведение "VU Meter включён по умолчанию" (в отличие от Bypass,
+// который по умолчанию выключен)
+static bool loadSavedVuMeterState() {
+  SavedVuMeterState data;
+  EEPROM.get(EEPROM_VU_METER_STATE_ADDR, data);
+  if (data.magic != SAVED_VU_METER_MAGIC) {
+    return true;
+  }
+  return data.vuMeterOn != 0;
 }
 
 void powerOffScreen() {
@@ -108,6 +189,7 @@ void powerOffDevices() {
   digitalWrite(SOURCE_RELAY_1_PIN, LOW); // Гасим все реле источников — взаимоисключающий выбор на паузе
   digitalWrite(SOURCE_RELAY_2_PIN, LOW);
   digitalWrite(SOURCE_RELAY_3_PIN, LOW);
+  digitalWrite(SOURCE_RELAY_4_PIN, LOW);
   digitalWrite(BYPASS_LED_PIN, LOW); // Гасим индикатор Bypass вместе со всем остальным
   bypassAnimMode = 0; // Прерываем анимацию колец, если она была активна на момент выключения
 
@@ -141,11 +223,19 @@ void powerOnDevices() {
   pinMode(RELAY_PIN_LED, OUTPUT);
   pinMode(RELAY_PIN_MUTE, OUTPUT);
   digitalWrite(RELAY_PIN_STANDBY, HIGH); // Включаем Standby
-  digitalWrite(RELAY_PIN_VU_METER, HIGH); // Включаем VU Meter
   digitalWrite(RELAY_PIN_MUTE, LOW); // Оставляем Mute выключенным
+
+  settings[vuMeterMenuIndex()] = loadSavedVuMeterState() ? 1 : 0; // Восстанавливаем VU Meter, как было перед выключением
+  digitalWrite(RELAY_PIN_VU_METER, settings[vuMeterMenuIndex()] == 1 ? HIGH : LOW);
+
   settings[4] = loadSavedBypassState() ? 1 : 0; // Восстанавливаем Bypass, как было перед выключением
   applyBypassState(); // Синхронизирует и реле, и индикаторный светодиод
-  applySourceSelection(); // Восстанавливаем выбранный источник из settings[7]
+
+  int savedSourceIndex;
+  if (loadSavedSourceState(&savedSourceIndex)) {
+    settings[sourceMenuIndex()] = savedSourceIndex; // Переживает настоящее отключение питания (не только Standby)
+  }
+  applySourceSelection();
 
   if (settings[4] == 1) {
     // Bypass восстановлен включённым — центр колец Bass/High должен быть красным (как при

@@ -31,6 +31,9 @@ int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT,
 bool inSettingsMode = false;
 bool isMuted = false; // Флаг для состояния Mute
 unsigned long lastMotorInputTime = 0; // Момент последней команды на мотор Bass/High/Volume (для авто-стопа)
+int displayBrightness = DISPLAY_BRIGHTNESS_DEFAULT_PERCENT; // Яркость дисплея, пункт "Dimmer"
+bool dimmerEditingDisplay = false; // Какая строка внутри Dimmer сейчас активна (false = кольца)
+bool dimmerRowLocked = false; // Подтверждена ли подсвеченная строка Dimmer кликом энкодера (см. main.h)
 
 bool volumeOverlayActive = false;
 static int volumeOverlaySavedMenuItem = 0;
@@ -45,6 +48,42 @@ static int volumeMenuIndex() {
   return 0; // Не должно случаться — "Volume" всегда есть в menuItems[]
 }
 
+int dimmerMenuIndex() {
+  for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    if (menuItems[i] == "Dimmer") {
+      return i;
+    }
+  }
+  return 0; // Не должно случаться — "Dimmer" всегда есть в menuItems[]
+}
+
+int colorMenuIndex() {
+  for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    if (menuItems[i] == "Color") {
+      return i;
+    }
+  }
+  return 0; // Не должно случаться — "Color" всегда есть в menuItems[]
+}
+
+int sourceMenuIndex() {
+  for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    if (menuItems[i] == "Source") {
+      return i;
+    }
+  }
+  return 0; // Не должно случаться — "Source" всегда есть в menuItems[]
+}
+
+int vuMeterMenuIndex() {
+  for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    if (menuItems[i] == "VU Meter") {
+      return i;
+    }
+  }
+  return 0; // Не должно случаться — "VU Meter" всегда есть в menuItems[]
+}
+
 // Перерисовывает экран, который сейчас должен быть виден по inSettingsMode/currentMenuItem —
 // нужно, чтобы после отпускания Up/Down (глобальный шорткат громкости, см. beginVolumeOverlay())
 // вернуть на экран именно то, что было до него (карусель или конкретный экран настройки)
@@ -54,7 +93,7 @@ void redrawCurrentScreen() {
   } else if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
     drawToggleSwitch(settings[currentMenuItem] == 1);
   } else if (menuItems[currentMenuItem] == "Dimmer") {
-    drawDimmerScreen(settings[currentMenuItem]);
+    drawDimmerScreen();
   } else if (menuItems[currentMenuItem] == "Color") {
     drawColorScreen(settings[currentMenuItem]);
   } else if (menuItems[currentMenuItem] == "Source") {
@@ -126,11 +165,11 @@ void resetCursor() {
 }
 
 void saveSettings() {
-  // Здесь можно добавить код для сохранения состояния settings в EEPROM
+  saveDimmerColorSettings(); // LED/Display/Color — см. on_off_logic.cpp
 }
 
 void loadSettings() {
-  // Здесь можно добавить код для загрузки состояния settings из EEPROM
+  loadDimmerColorSettings(); // LED/Display/Color — см. on_off_logic.cpp
 }
 
 void blinkLED(int pin) {
@@ -149,7 +188,17 @@ void setup() {
   }
   Serial.println("Starting setup...");
 
+  // Восстанавливаем LED/Display/Color из EEPROM ДО того, как их значения впервые применятся
+  // ниже (applyDisplayBrightness()/applyRingColorScheme()/initialRingBrightness) — иначе
+  // экран/кольца на старте на мгновение показывали бы значения по умолчанию
+  loadSettings();
+
   u8g2.begin();
+  // VCOMH (0xDB) по умолчанию у SSD1309-драйвера в u8g2 — 0x20; сама библиотека в комментарии
+  // к init-последовательности пишет, что 0x00 даёт максимальный диапазон для setContrast()
+  // (issue #98) — без этого регулировка яркости дисплея была почти незаметна визуально
+  u8g2.sendF("ca", 0x0DB, 0x000);
+  applyDisplayBrightness(); // Стартовая яркость дисплея, пункт "Dimmer" (displayBrightness)
   volumeRing.begin();
   bassRing.begin();
   highRing.begin();
@@ -182,13 +231,12 @@ void setup() {
   pinMode(SOURCE_RELAY_1_PIN, OUTPUT);
   pinMode(SOURCE_RELAY_2_PIN, OUTPUT);
   pinMode(SOURCE_RELAY_3_PIN, OUTPUT);
+  pinMode(SOURCE_RELAY_4_PIN, OUTPUT);
   pinMode(LED_BASS_PIN, OUTPUT);
   pinMode(LED_HIGH_PIN, OUTPUT);
   pinMode(LED_VOLUME_PIN, OUTPUT);
   pinMode(BYPASS_BUTTON_PIN, INPUT_PULLUP);
   pinMode(BYPASS_LED_PIN, OUTPUT);
-
-  loadSettings(); // Загрузка сохраненных настроек
 
   initRemoteControl();
   attachInterrupt(digitalPinToInterrupt(ENCODER_A_PIN), encoderISR, CHANGE);
@@ -290,15 +338,33 @@ void loop() {
           encoderValue = 0;
           drawArrowIndicator(0, showArrowRight, showArrowLeft);
         } else if (menuItems[currentMenuItem] == "Dimmer") {
-          settings[currentMenuItem] = constrain(settings[currentMenuItem] + encoderValue * 5, 0, 100);
+          if (!dimmerRowLocked) {
+            // Строка ещё не подтверждена кликом энкодера (см. checkEncoderButton() в
+            // encoder.cpp) — вращение просто двигает подсветку между LED (верх) и Display
+            // (низ), значения не меняет. Пульт (Up/Down) на этот флаг не смотрит — там
+            // выбор строки работает как раньше, независимо от энкодера
+            if (encoderValue > 0) {
+              dimmerEditingDisplay = true;
+            } else if (encoderValue < 0) {
+              dimmerEditingDisplay = false;
+            }
+          } else if (dimmerEditingDisplay) {
+            displayBrightness = constrain(displayBrightness + encoderValue * 5, 0, 100);
+            applyDisplayBrightness();
+            saveSettings();
+          } else {
+            settings[currentMenuItem] = constrain(settings[currentMenuItem] + encoderValue * 5, 0, 100);
+            applyRingDimmer();
+            saveSettings();
+          }
           encoderValue = 0;
-          applyRingDimmer();
-          drawDimmerScreen(settings[currentMenuItem]);
+          drawDimmerScreen();
         } else if (menuItems[currentMenuItem] == "Color") {
           settings[currentMenuItem] = ((settings[currentMenuItem] + direction) % RING_COLOR_COUNT + RING_COLOR_COUNT) % RING_COLOR_COUNT;
           encoderValue = 0;
           applyRingColorScheme();
           drawColorScreen(settings[currentMenuItem]);
+          saveSettings();
         } else if (menuItems[currentMenuItem] == "Source") {
           settings[currentMenuItem] = ((settings[currentMenuItem] + direction) % SOURCE_COUNT + SOURCE_COUNT) % SOURCE_COUNT;
           encoderValue = 0;

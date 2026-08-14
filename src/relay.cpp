@@ -4,13 +4,14 @@
 #include "animation_logic.h"
 #include "display_logic.h"
 
-// Применяет settings[] для пункта "Source" (0-2): включает ровно одно из трёх реле,
-// остальные два принудительно гасит — переключение источников взаимоисключающее
+// Применяет settings[] для пункта "Source" (0-3): включает ровно одно из четырёх реле,
+// остальные три принудительно гасит — переключение источников взаимоисключающее
 void applySourceSelection() {
   int idx = constrain(settings[7], 0, SOURCE_COUNT - 1);
   digitalWrite(SOURCE_RELAY_1_PIN, idx == 0 ? HIGH : LOW);
   digitalWrite(SOURCE_RELAY_2_PIN, idx == 1 ? HIGH : LOW);
   digitalWrite(SOURCE_RELAY_3_PIN, idx == 2 ? HIGH : LOW);
+  digitalWrite(SOURCE_RELAY_4_PIN, idx == 3 ? HIGH : LOW);
 }
 
 // Применяет текущее settings[4] (Bypass) и на реле, и на отдельный индикаторный

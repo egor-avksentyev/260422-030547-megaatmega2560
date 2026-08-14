@@ -11,7 +11,7 @@
 #include "animations/color_animation.h"
 #include "animations/source_animation.h"
 
-U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
+U8G2_SSD1309_128X64_NONAME2_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
 
 // Надпись "bypass" в углу экрана — нужна на ВСЕХ экранах (не только карусели меню),
 // иначе при переключении Bypass из настроек конкретного пункта не видно подтверждения,
@@ -25,6 +25,13 @@ static void drawStatusIndicators() {
     u8g2.setCursor(BYPASS_INDICATOR_X, BYPASS_INDICATOR_Y);
     u8g2.print("bypass");
   }
+}
+
+// Подчёркивает уже напечатанный по (x, y) текущим шрифтом текст — короткая линия по
+// реальной ширине текста (u8g2.getStrWidth()), не во весь экран. Используется для
+// названия пункта меню на экранах VU Meter/Color/Source/Dimmer
+static void drawTitleUnderline(int x, int y, const char* text, int yOffset) {
+  u8g2.drawHLine(x, y + yOffset, u8g2.getStrWidth(text));
 }
 
 static unsigned long lastDisplayTransferTime = 0;
@@ -111,26 +118,46 @@ unsigned long lastMenuDrawTime() {
 void drawToggleSwitch(bool state) {
   waitForDisplayRedrawGap();
 
-  u8g2.setFont(u8g2_font_ncenB14_tr);
+  u8g2.setFont(TOGGLE_FONT);
   u8g2.clearBuffer();
 
-  // Отображаем название пункта меню в правом верхнем углу
-  u8g2.setCursor(20, 20);
+  // Отображаем название пункта меню — подчёркнуто у обоих (VU Meter и Bypass, экран общий),
+  // см. TOGGLE_LABEL_UNDERLINE_Y_OFFSET. menuItems[currentMenuItem].c_str(), а не
+  // захардкоженная строка — экран общий на два разных названия
+  u8g2.setCursor(TOGGLE_LABEL_X, TOGGLE_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(TOGGLE_LABEL_X, TOGGLE_LABEL_Y, menuItems[currentMenuItem].c_str(), TOGGLE_LABEL_UNDERLINE_Y_OFFSET);
 
-  // Отрисовка toggle switch
-  int x = 40;
-  int y = 40;
-  u8g2.drawFrame(x, y, 50, 18); // Рамка переключателя
+  // "Pill"-переключатель — позиция/размер через TOGGLE_* в hardware_settings.h. OFF:
+  // дорожка пустая (только контур), бегунок закрашен слева. ON: дорожка залита целиком,
+  // бегунок — "вырезанный" (setDrawColor(0)) кружок с контуром справа, чтобы не сливаться
+  // с залитой дорожкой на монохромном экране
+  int trackX = TOGGLE_SWITCH_X;
+  int trackY = TOGGLE_SWITCH_Y;
+  int trackW = TOGGLE_SWITCH_WIDTH;
+  int trackH = TOGGLE_SWITCH_HEIGHT;
+  int radius = trackH / 2;
+  int knobRadius = radius - TOGGLE_KNOB_MARGIN;
+  int knobY = trackY + radius;
+  int knobXOff = trackX + radius; // OFF — бегунок у левого края
+  int knobXOn = trackX + trackW - radius; // ON — бегунок у правого края
+
+  u8g2.drawRFrame(trackX, trackY, trackW, trackH, radius);
   if (state) {
-    u8g2.drawBox(x + 25, y, 25, 18); // Положение ON
-    u8g2.setCursor(x + 55, y + 15);
-    u8g2.print("On");
+    u8g2.drawRBox(trackX, trackY, trackW, trackH, radius);
+    u8g2.setDrawColor(0);
+    u8g2.drawDisc(knobXOn, knobY, knobRadius);
+    u8g2.setDrawColor(1);
+    u8g2.drawCircle(knobXOn, knobY, knobRadius);
   } else {
-    u8g2.drawBox(x, y, 25, 18); // Положение OFF
-    u8g2.setCursor(x - 35, y + 15);
-    u8g2.print("Off");
+    u8g2.drawDisc(knobXOff, knobY, knobRadius);
   }
+
+  // Подпись состояния — фиксированная позиция справа от дорожки (не скачет между
+  // сторонами, как было раньше)
+  u8g2.setFont(TOGGLE_STATE_FONT);
+  u8g2.setCursor(trackX + TOGGLE_STATE_TEXT_X_OFFSET, trackY + TOGGLE_STATE_TEXT_Y_OFFSET);
+  u8g2.print(state ? "On" : "Off");
 
   drawStatusIndicators();
 
@@ -187,28 +214,33 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
   Serial.print(unit);
   Serial.println(")");
 
-  // Рисуем кружок и стрелочку
-  int x = 20; // Круг в левой верхней части экрана
-  int y = 20;
-  int circleRadius = 14; // Кружок уменьшен на 30%
-  u8g2.drawCircle(x, y, circleRadius);
-  int needleLength = 18; // Длиннее радиуса — стрелка выходит за пределы кружка
-  int arrowX = x + needleLength * sin(radians(angleValue));
-  int arrowY = y - needleLength * cos(radians(angleValue));
+  // Рисуем кружок и стрелочку — позиция/размер настраиваются через ARROW_CIRCLE_*/
+  // ARROW_NEEDLE_LENGTH в hardware_settings.h
+  int x = ARROW_CIRCLE_X;
+  int y = ARROW_CIRCLE_Y;
+  u8g2.drawCircle(x, y, ARROW_CIRCLE_RADIUS);
+  int arrowX = x + ARROW_NEEDLE_LENGTH * sin(radians(angleValue));
+  int arrowY = y - ARROW_NEEDLE_LENGTH * cos(radians(angleValue));
   u8g2.drawLine(x, y, arrowX, arrowY); // Стрелочка
 
-  // Отрисовка стрелочек
+  // Отрисовка стрелочек направления — позиция/размер через ARROW_INDICATOR_Y_*/ARROW_*_X_*
   if (showArrowRight) {
-    u8g2.drawTriangle(110, 30, 120, 35, 110, 40); // Стрелочка вправо
+    u8g2.drawTriangle(ARROW_RIGHT_X_NEAR, ARROW_INDICATOR_Y_TOP, ARROW_RIGHT_X_FAR, ARROW_INDICATOR_Y_MID, ARROW_RIGHT_X_NEAR, ARROW_INDICATOR_Y_BOTTOM); // Стрелочка вправо
   }
   if (showArrowLeft) {
-    u8g2.drawTriangle(40, 30, 30, 35, 40, 40); // Стрелочка влево
+    u8g2.drawTriangle(ARROW_LEFT_X_NEAR, ARROW_INDICATOR_Y_TOP, ARROW_LEFT_X_FAR, ARROW_INDICATOR_Y_MID, ARROW_LEFT_X_NEAR, ARROW_INDICATOR_Y_BOTTOM); // Стрелочка влево
   }
 
-  // Отрисовка остальных элементов
-  u8g2.drawHLine(20, 45, 88);
-  int progressBarPos = map(potValue, valueMin, valueMax, 20, 108);
-  u8g2.drawBox(progressBarPos, 47, 4, 12);
+  // Отрисовка остальных элементов — позиция/размер через PROGRESS_LINE_*/PROGRESS_BAR_*.
+  // Засечки на минимуме/центре/максимуме шкалы — читаемость без цифровой разметки,
+  // особенно центра (0dB у Bass/High)
+  int progressCenterX = (PROGRESS_BAR_X_MIN + PROGRESS_BAR_X_MAX) / 2;
+  u8g2.drawVLine(PROGRESS_BAR_X_MIN, PROGRESS_LINE_Y - PROGRESS_TICK_HEIGHT, PROGRESS_TICK_HEIGHT);
+  u8g2.drawVLine(progressCenterX, PROGRESS_LINE_Y - PROGRESS_TICK_HEIGHT, PROGRESS_TICK_HEIGHT);
+  u8g2.drawVLine(PROGRESS_BAR_X_MAX, PROGRESS_LINE_Y - PROGRESS_TICK_HEIGHT, PROGRESS_TICK_HEIGHT);
+  u8g2.drawHLine(PROGRESS_LINE_X, PROGRESS_LINE_Y, PROGRESS_LINE_WIDTH);
+  int progressBarPos = map(potValue, valueMin, valueMax, PROGRESS_BAR_X_MIN, PROGRESS_BAR_X_MAX);
+  u8g2.drawBox(progressBarPos, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT);
 
   // Счётчик %/dB — позиция и шрифт настраиваются через VALUE_*/VOLUME_VALUE_*
   u8g2.setFont(isVolume ? VOLUME_VALUE_FONT : VALUE_FONT);
@@ -221,7 +253,34 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
   u8g2.sendBuffer();
 }
 
-void drawDimmerScreen(int percent) {
+// Рисует одну строку списка настроек ("LED 20%", "AUX", ...) с подсветкой, если это
+// активный/выбранный вариант — скруглённый залитый прямоугольник позади текста с
+// инвертированным текстом поверх (setDrawColor(0)), вместо старого "> " перед текстом,
+// плюс отдельная точка слева от строки (доп. индикатор выбора). Размер подсветки — по
+// реальной ширине строки (u8g2.getStrWidth()) и ascent/descent ТЕКУЩЕГО шрифта (вызывающий
+// код должен успеть setFont() до вызова), а не подогнан на глаз. Общий приём для списков
+// в настройках — используется и в Dimmer, и в Source
+static void drawHighlightedRow(int x, int y, const char* text, bool isActive, int padX, int padY, int radius, int dotRadius, int dotXOffset) {
+  if (isActive) {
+    int textWidth = u8g2.getStrWidth(text);
+    int boxX = x - padX;
+    int boxY = y - u8g2.getAscent() - padY;
+    int boxW = textWidth + padX * 2;
+    int boxH = (u8g2.getAscent() - u8g2.getDescent()) + padY * 2;
+    u8g2.drawRBox(boxX, boxY, boxW, boxH, radius);
+    u8g2.setDrawColor(0);
+    u8g2.setCursor(x, y);
+    u8g2.print(text);
+    u8g2.setDrawColor(1);
+    int dotY = y - (u8g2.getAscent() + u8g2.getDescent()) / 2;
+    u8g2.drawDisc(x - dotXOffset, dotY, dotRadius);
+  } else {
+    u8g2.setCursor(x, y);
+    u8g2.print(text);
+  }
+}
+
+void drawDimmerScreen() {
   waitForDisplayRedrawGap();
 
   u8g2.setFont(DIMMER_LABEL_FONT);
@@ -229,15 +288,55 @@ void drawDimmerScreen(int percent) {
 
   u8g2.setCursor(DIMMER_LABEL_X, DIMMER_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(DIMMER_LABEL_X, DIMMER_LABEL_Y, "Dimmer", DIMMER_LABEL_UNDERLINE_Y_OFFSET);
 
-  u8g2.setFont(DIMMER_VALUE_FONT);
-  u8g2.setCursor(DIMMER_VALUE_X, DIMMER_VALUE_Y);
-  u8g2.print(percent);
-  u8g2.print("%");
+  // Две строки — яркость колец и яркость дисплея; какая активна — dimmerEditingDisplay,
+  // переключается Up/Down на пульте (или вращением энкодера, пока не подтверждена кликом)
+  u8g2.setFont(DIMMER_ROW_FONT);
+  char ledRow[16];
+  snprintf(ledRow, sizeof(ledRow), "LED %d%%", settings[currentMenuItem]);
+  drawHighlightedRow(DIMMER_ROW_X, DIMMER_ROW1_Y, ledRow, !dimmerEditingDisplay,
+    DIMMER_ROW_HIGHLIGHT_PAD_X, DIMMER_ROW_HIGHLIGHT_PAD_Y, DIMMER_ROW_HIGHLIGHT_RADIUS,
+    DIMMER_ROW_DOT_RADIUS, DIMMER_ROW_DOT_X_OFFSET);
+
+  char displayRow[16];
+  snprintf(displayRow, sizeof(displayRow), "Display %d%%", displayBrightness);
+  drawHighlightedRow(DIMMER_ROW_X, DIMMER_ROW2_Y, displayRow, dimmerEditingDisplay,
+    DIMMER_ROW_HIGHLIGHT_PAD_X, DIMMER_ROW_HIGHLIGHT_PAD_Y, DIMMER_ROW_HIGHLIGHT_RADIUS,
+    DIMMER_ROW_DOT_RADIUS, DIMMER_ROW_DOT_X_OFFSET);
 
   drawStatusIndicators();
 
   u8g2.sendBuffer();
+}
+
+void applyDisplayBrightness() {
+  u8g2.setContrast(map(displayBrightness, 0, 100, 0, 255));
+}
+
+// Квадратик-образец яркости выбранного цвета — монохромный экран не может показать сам
+// цвет (r/g/b), поэтому это дизеринг: каждый пиксель зажигается с вероятностью
+// luminance/255 (random(256) < luminance), где luminance = (r*299+g*587+b*114)/1000 —
+// чем выше яркость, тем плотнее точки, вплоть до почти сплошной заливки у самых ярких
+// цветов (White и т.п.). Узор точек — свой, но ФИКСИРОВАННЫЙ у каждого цвета (не
+// перегенерируется на каждый redraw): randomSeed() от самих r/g/b (не от индекса в
+// ringColorPalette[] — так узор переживает переупорядочивание палитры) даёт один и тот же
+// узор каждый раз при выборе этого цвета, и он отличается от узора других цветов —
+// значит, цвета можно узнавать по узору точек, а не только по плотности заливки.
+// Multiplicative hash (2654435761 — множитель Кнута) разносит соседние по таблице r/g/b,
+// чтобы у похожих по яркости соседних цветов не совпадали и узоры
+static void drawBrightnessSwatch(int x, int y, int size, uint8_t r, uint8_t g, uint8_t b) {
+  uint32_t seed = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+  randomSeed(seed * 2654435761UL);
+  uint16_t luminance = ((uint16_t)r * 299 + (uint16_t)g * 587 + (uint16_t)b * 114) / 1000;
+  for (int yy = 0; yy < size; yy++) {
+    for (int xx = 0; xx < size; xx++) {
+      if ((uint16_t)random(256) < luminance) {
+        u8g2.drawPixel(x + xx, y + yy);
+      }
+    }
+  }
+  u8g2.drawFrame(x, y, size, size);
 }
 
 void drawColorScreen(int colorIndex) {
@@ -248,10 +347,14 @@ void drawColorScreen(int colorIndex) {
 
   u8g2.setCursor(COLOR_LABEL_X, COLOR_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(COLOR_LABEL_X, COLOR_LABEL_Y, "Color", COLOR_LABEL_UNDERLINE_Y_OFFSET);
 
   u8g2.setFont(COLOR_VALUE_FONT);
   u8g2.setCursor(COLOR_VALUE_X, COLOR_VALUE_Y);
   u8g2.print(ringColorPalette[colorIndex].name);
+
+  drawBrightnessSwatch(COLOR_SWATCH_X, COLOR_SWATCH_Y, COLOR_SWATCH_SIZE,
+    ringColorPalette[colorIndex].r, ringColorPalette[colorIndex].g, ringColorPalette[colorIndex].b);
 
   drawStatusIndicators();
 
@@ -266,10 +369,19 @@ void drawSourceScreen(int sourceIndex) {
 
   u8g2.setCursor(SOURCE_LABEL_X, SOURCE_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(SOURCE_LABEL_X, SOURCE_LABEL_Y, "Source", SOURCE_LABEL_UNDERLINE_Y_OFFSET);
 
-  u8g2.setFont(SOURCE_VALUE_FONT);
-  u8g2.setCursor(SOURCE_VALUE_X, SOURCE_VALUE_Y);
-  u8g2.print(sourceNames[sourceIndex]);
+  // Список ВСЕХ источников (не только текущего) — активный подсвечен (см.
+  // drawHighlightedRow() выше), чтобы сразу видеть остальные варианты и куда крутить,
+  // а не только текущее значение. Растёт вниз сам по SOURCE_COUNT — не привязан к
+  // конкретному числу источников
+  u8g2.setFont(SOURCE_LIST_FONT);
+  for (int i = 0; i < SOURCE_COUNT; i++) {
+    int y = SOURCE_LIST_Y_START + i * SOURCE_LIST_LINE_HEIGHT;
+    drawHighlightedRow(SOURCE_LIST_X, y, sourceNames[i], i == sourceIndex,
+      SOURCE_ROW_HIGHLIGHT_PAD_X, SOURCE_ROW_HIGHLIGHT_PAD_Y, SOURCE_ROW_HIGHLIGHT_RADIUS,
+      SOURCE_ROW_DOT_RADIUS, SOURCE_ROW_DOT_X_OFFSET);
+  }
 
   drawStatusIndicators();
 
