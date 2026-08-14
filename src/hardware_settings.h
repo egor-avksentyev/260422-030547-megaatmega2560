@@ -368,6 +368,9 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define PROGRESS_BAR_Y 47
 #define PROGRESS_BAR_WIDTH 4
 #define PROGRESS_BAR_HEIGHT 12
+// Короткие засечки над шкалой на минимуме/центре/максимуме — читаемость (особенно
+// центра, 0dB для Bass/High) без разметки цифрами
+#define PROGRESS_TICK_HEIGHT 4
 
 // --- Экран настроек VU Meter/Bypass ("pill"-переключатель, drawToggleSwitch() в
 // display_logic.cpp) — скруглённая дорожка (drawRFrame/drawRBox, радиус = половина высоты)
@@ -386,10 +389,10 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define TOGGLE_STATE_TEXT_X_OFFSET 62 // Смещение от TOGGLE_SWITCH_X — позиция фиксирована, не скачет между сторонами
 #define TOGGLE_STATE_TEXT_Y_OFFSET 16 // Смещение от TOGGLE_SWITCH_Y
 
-// --- Экран настроек Dimmer — теперь 2 строки (яркость колец и яркость дисплея), между
-// которыми переключаются Up/Down на пульте (см. IR_UP/IR_DOWN в remote_control.cpp);
-// Left/Right регулируют то значение, что выбрано. Активная строка отмечается "> " перед
-// текстом (см. drawDimmerScreen() в display_logic.cpp) ---
+// --- Экран настроек Dimmer — 2 строки (яркость колец и яркость дисплея), между которыми
+// переключаются Up/Down на пульте (см. IR_UP/IR_DOWN в remote_control.cpp); Left/Right
+// регулируют то значение, что выбрано. Активная строка отмечена скруглённой подсветкой
+// (инвертированный текст поверх неё) — см. drawDimmerScreen() в display_logic.cpp ---
 #define DIMMER_LABEL_FONT u8g2_font_ncenB12_tr
 #define DIMMER_LABEL_X 25
 #define DIMMER_LABEL_Y 25
@@ -398,6 +401,11 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define DIMMER_ROW1_Y 44 // Яркость колец (LED)
 #define DIMMER_ROW2_Y 62 // Яркость дисплея (Display)
 #define DISPLAY_BRIGHTNESS_DEFAULT_PERCENT 80 // Стартовая яркость дисплея — сбрасывается при каждом включении, как и Dimmer колец
+// Подсветка активной строки — размер считается по реальной ширине текста строки
+// (u8g2.getStrWidth()) + эти отступы, высота — по ascent/descent шрифта DIMMER_ROW_FONT
+#define DIMMER_ROW_HIGHLIGHT_PAD_X 3
+#define DIMMER_ROW_HIGHLIGHT_PAD_Y 2
+#define DIMMER_ROW_HIGHLIGHT_RADIUS 3
 
 // --- Экран настроек Color ---
 #define COLOR_LABEL_FONT u8g2_font_ncenB12_tr
@@ -406,6 +414,13 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 #define COLOR_VALUE_FONT u8g2_font_ncenB08_tr
 #define COLOR_VALUE_X 15
 #define COLOR_VALUE_Y 55
+// Квадратик-образец справа от названия цвета — монохромный экран не может показать сам
+// цвет, поэтому это упорядоченная дизеринг-заливка (2x2 матрица Байера) по яркости
+// (r*299+g*587+b*114)/1000 выбранного цвета: тёмные цвета — редкие точки, светлые — почти
+// сплошная заливка. См. drawBrightnessSwatch() в display_logic.cpp
+#define COLOR_SWATCH_X 90
+#define COLOR_SWATCH_Y 42
+#define COLOR_SWATCH_SIZE 24
 
 // --- Экран настроек Source ---
 #define SOURCE_LABEL_FONT u8g2_font_ncenB10_tr

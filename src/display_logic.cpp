@@ -221,7 +221,13 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
     u8g2.drawTriangle(ARROW_LEFT_X_NEAR, ARROW_INDICATOR_Y_TOP, ARROW_LEFT_X_FAR, ARROW_INDICATOR_Y_MID, ARROW_LEFT_X_NEAR, ARROW_INDICATOR_Y_BOTTOM); // Стрелочка влево
   }
 
-  // Отрисовка остальных элементов — позиция/размер через PROGRESS_LINE_*/PROGRESS_BAR_*
+  // Отрисовка остальных элементов — позиция/размер через PROGRESS_LINE_*/PROGRESS_BAR_*.
+  // Засечки на минимуме/центре/максимуме шкалы — читаемость без цифровой разметки,
+  // особенно центра (0dB у Bass/High)
+  int progressCenterX = (PROGRESS_BAR_X_MIN + PROGRESS_BAR_X_MAX) / 2;
+  u8g2.drawVLine(PROGRESS_BAR_X_MIN, PROGRESS_LINE_Y - PROGRESS_TICK_HEIGHT, PROGRESS_TICK_HEIGHT);
+  u8g2.drawVLine(progressCenterX, PROGRESS_LINE_Y - PROGRESS_TICK_HEIGHT, PROGRESS_TICK_HEIGHT);
+  u8g2.drawVLine(PROGRESS_BAR_X_MAX, PROGRESS_LINE_Y - PROGRESS_TICK_HEIGHT, PROGRESS_TICK_HEIGHT);
   u8g2.drawHLine(PROGRESS_LINE_X, PROGRESS_LINE_Y, PROGRESS_LINE_WIDTH);
   int progressBarPos = map(potValue, valueMin, valueMax, PROGRESS_BAR_X_MIN, PROGRESS_BAR_X_MAX);
   u8g2.drawBox(progressBarPos, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT);
@@ -237,6 +243,29 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
   u8g2.sendBuffer();
 }
 
+// Рисует одну строку экрана Dimmer ("LED 20%" / "Display 80%"). Активная строка (та,
+// что сейчас крутит Left/Right, см. dimmerEditingDisplay/dimmerRowLocked в main.h) —
+// вместо "> " перед текстом теперь скруглённая подсветка позади него с инвертированным
+// текстом поверх (setDrawColor(0)), размер подсветки — по реальной ширине строки
+// (u8g2.getStrWidth()) и ascent/descent текущего шрифта, а не подогнан на глаз
+static void drawDimmerRow(int y, const char* text, bool isActive) {
+  if (isActive) {
+    int textWidth = u8g2.getStrWidth(text);
+    int boxX = DIMMER_ROW_X - DIMMER_ROW_HIGHLIGHT_PAD_X;
+    int boxY = y - u8g2.getAscent() - DIMMER_ROW_HIGHLIGHT_PAD_Y;
+    int boxW = textWidth + DIMMER_ROW_HIGHLIGHT_PAD_X * 2;
+    int boxH = (u8g2.getAscent() - u8g2.getDescent()) + DIMMER_ROW_HIGHLIGHT_PAD_Y * 2;
+    u8g2.drawRBox(boxX, boxY, boxW, boxH, DIMMER_ROW_HIGHLIGHT_RADIUS);
+    u8g2.setDrawColor(0);
+    u8g2.setCursor(DIMMER_ROW_X, y);
+    u8g2.print(text);
+    u8g2.setDrawColor(1);
+  } else {
+    u8g2.setCursor(DIMMER_ROW_X, y);
+    u8g2.print(text);
+  }
+}
+
 void drawDimmerScreen() {
   waitForDisplayRedrawGap();
 
@@ -246,18 +275,16 @@ void drawDimmerScreen() {
   u8g2.setCursor(DIMMER_LABEL_X, DIMMER_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
 
-  // Две строки — яркость колец и яркость дисплея; активная (та, что сейчас крутит Left/Right)
-  // отмечена "> " перед текстом, см. dimmerEditingDisplay (main.h), переключается Up/Down
+  // Две строки — яркость колец и яркость дисплея; какая активна — dimmerEditingDisplay,
+  // переключается Up/Down на пульте (или вращением энкодера, пока не подтверждена кликом)
   u8g2.setFont(DIMMER_ROW_FONT);
-  u8g2.setCursor(DIMMER_ROW_X, DIMMER_ROW1_Y);
-  u8g2.print(dimmerEditingDisplay ? "  LED " : "> LED ");
-  u8g2.print(settings[currentMenuItem]);
-  u8g2.print("%");
+  char ledRow[16];
+  snprintf(ledRow, sizeof(ledRow), "LED %d%%", settings[currentMenuItem]);
+  drawDimmerRow(DIMMER_ROW1_Y, ledRow, !dimmerEditingDisplay);
 
-  u8g2.setCursor(DIMMER_ROW_X, DIMMER_ROW2_Y);
-  u8g2.print(dimmerEditingDisplay ? "> Display " : "  Display ");
-  u8g2.print(displayBrightness);
-  u8g2.print("%");
+  char displayRow[16];
+  snprintf(displayRow, sizeof(displayRow), "Display %d%%", displayBrightness);
+  drawDimmerRow(DIMMER_ROW2_Y, displayRow, dimmerEditingDisplay);
 
   drawStatusIndicators();
 
@@ -266,6 +293,23 @@ void drawDimmerScreen() {
 
 void applyDisplayBrightness() {
   u8g2.setContrast(map(displayBrightness, 0, 100, 0, 255));
+}
+
+// Квадратик-образец яркости выбранного цвета — монохромный экран не может показать сам
+// цвет (r/g/b), поэтому это упорядоченный дизеринг по 2x2 матрице Байера: чем выше
+// яркость (r*299+g*587+b*114)/1000, тем плотнее точки внутри рамки, вплоть до почти
+// сплошной заливки у самых ярких цветов (White и т.п.)
+static void drawBrightnessSwatch(int x, int y, int size, uint8_t r, uint8_t g, uint8_t b) {
+  static const uint8_t BAYER_2X2[2][2] = {{0, 128}, {192, 64}};
+  uint16_t luminance = ((uint16_t)r * 299 + (uint16_t)g * 587 + (uint16_t)b * 114) / 1000;
+  for (int yy = 0; yy < size; yy++) {
+    for (int xx = 0; xx < size; xx++) {
+      if (luminance > BAYER_2X2[yy % 2][xx % 2]) {
+        u8g2.drawPixel(x + xx, y + yy);
+      }
+    }
+  }
+  u8g2.drawFrame(x, y, size, size);
 }
 
 void drawColorScreen(int colorIndex) {
@@ -280,6 +324,9 @@ void drawColorScreen(int colorIndex) {
   u8g2.setFont(COLOR_VALUE_FONT);
   u8g2.setCursor(COLOR_VALUE_X, COLOR_VALUE_Y);
   u8g2.print(ringColorPalette[colorIndex].name);
+
+  drawBrightnessSwatch(COLOR_SWATCH_X, COLOR_SWATCH_Y, COLOR_SWATCH_SIZE,
+    ringColorPalette[colorIndex].r, ringColorPalette[colorIndex].g, ringColorPalette[colorIndex].b);
 
   drawStatusIndicators();
 
