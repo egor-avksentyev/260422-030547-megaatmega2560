@@ -13,10 +13,9 @@
 bool powerOff = false; // Флаг для состояния питания
 
 // --- Долговременная память положения Bass/High (EEPROM) ---
-// Сохраняется только если Bypass выключен при выключении питания (если включён, Bass/High
-// всё равно принудительно прижаты к 0dB — запоминать нечего), восстанавливается при
-// следующем включении (см. powerOnDevices()). Включение Bypass во время работы стирает
-// эти данные — раз ручки "зажаты" в 0dB, старое положение больше не актуально.
+// Сохраняется при КАЖДОМ выключении питания (независимо от Bypass — переключение Bypass
+// больше не двигает Bass/High физически, см. triggerBypassAnim() в animation_logic.cpp),
+// восстанавливается при следующем включении (см. powerOnDevices()).
 struct SavedBassHighPosition {
   uint16_t magic; // Отличает "данные есть" от чистой/незаписанной EEPROM — иначе неинициализированные 0xFF читались бы как случайное валидное положение
   int bassRaw;
@@ -25,19 +24,11 @@ struct SavedBassHighPosition {
 #define SAVED_POSITION_MAGIC 0xB055
 
 void saveBassHighPositionOnShutdown() {
-  if (settings[4] != 0) { // Bypass включён — нет смысла запоминать то, что и так съедет к 0dB
-    return;
-  }
   int bassRaw, highRaw;
   readBassPotPercent(&bassRaw);
   readHighPotPercent(&highRaw);
   SavedBassHighPosition data = {SAVED_POSITION_MAGIC, bassRaw, highRaw};
   EEPROM.put(EEPROM_BASS_HIGH_POSITION_ADDR, data); // Побайтно сравнивает с уже записанным и не трогает EEPROM, если ничего не изменилось
-}
-
-void clearSavedBassHighPosition() {
-  SavedBassHighPosition data = {0, 0, 0}; // magic=0 != SAVED_POSITION_MAGIC — читается как "данных нет"
-  EEPROM.put(EEPROM_BASS_HIGH_POSITION_ADDR, data);
 }
 
 static bool loadSavedBassHighPosition(int* bassRawOut, int* highRawOut) {
@@ -71,6 +62,42 @@ static bool loadSavedBypassState() {
   SavedBypassState data;
   EEPROM.get(EEPROM_BYPASS_STATE_ADDR, data);
   return (data.magic == SAVED_BYPASS_MAGIC) && (data.bypassOn != 0);
+}
+
+// --- Долговременная память настроек Dimmer/Color (EEPROM) ---
+// В отличие от двух блоков выше, эти три значения пишутся сразу при КАЖДОМ изменении (см.
+// saveSettings() в main.cpp), а не только при выключении питания — EEPROM.put сам сравнивает
+// побайтно и не трогает физическую ячейку, если значение не изменилось, так что частые
+// вызовы не изнашивают память сильнее, чем реальные изменения настройки
+struct SavedDimmerColorSettings {
+  uint16_t magic;
+  uint8_t ringDimmerPercent;
+  uint8_t displayBrightnessPercent;
+  uint8_t ringColorIndex;
+};
+#define SAVED_DIMMER_COLOR_MAGIC 0xD1C0
+
+void saveDimmerColorSettings() {
+  SavedDimmerColorSettings data = {
+    SAVED_DIMMER_COLOR_MAGIC,
+    (uint8_t)settings[dimmerMenuIndex()],
+    (uint8_t)displayBrightness,
+    (uint8_t)settings[colorMenuIndex()]
+  };
+  EEPROM.put(EEPROM_DIMMER_COLOR_ADDR, data);
+}
+
+// Не трогает settings[]/displayBrightness, если в EEPROM ничего не записано (magic не
+// совпал) — остаются значения по умолчанию, заданные в main.cpp
+void loadDimmerColorSettings() {
+  SavedDimmerColorSettings data;
+  EEPROM.get(EEPROM_DIMMER_COLOR_ADDR, data);
+  if (data.magic != SAVED_DIMMER_COLOR_MAGIC) {
+    return;
+  }
+  settings[dimmerMenuIndex()] = data.ringDimmerPercent;
+  displayBrightness = data.displayBrightnessPercent;
+  settings[colorMenuIndex()] = data.ringColorIndex;
 }
 
 void powerOffScreen() {
@@ -108,6 +135,7 @@ void powerOffDevices() {
   digitalWrite(SOURCE_RELAY_1_PIN, LOW); // Гасим все реле источников — взаимоисключающий выбор на паузе
   digitalWrite(SOURCE_RELAY_2_PIN, LOW);
   digitalWrite(SOURCE_RELAY_3_PIN, LOW);
+  digitalWrite(SOURCE_RELAY_4_PIN, LOW);
   digitalWrite(BYPASS_LED_PIN, LOW); // Гасим индикатор Bypass вместе со всем остальным
   bypassAnimMode = 0; // Прерываем анимацию колец, если она была активна на момент выключения
 

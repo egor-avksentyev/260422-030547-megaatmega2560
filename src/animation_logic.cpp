@@ -2,24 +2,19 @@
 #include "hardware_settings.h"
 #include "neopixel.h"
 #include "main.h"
-#include "motor_driver_logic.h"
-#include "on_off_logic.h"
 
 int bypassAnimMode = 0;
 unsigned long bypassAnimStart = 0;
 
 // Запускает анимацию колец Bass/High под текущее settings[4] (Bypass) — вызывается
 // и от физической кнопки, и от переключения пункта меню "Bypass" энкодером/пультом,
-// чтобы анимация работала одинаково независимо от источника переключения. Плюс —
-// независимо от того, включаем мы Bypass или выключаем, — запускает автовозврат
-// Bass/High в 0dB, если они сейчас не там
+// чтобы анимация работала одинаково независимо от источника переключения. Физическое
+// положение Bass/High при этом не трогается — раньше Bypass ещё и принудительно
+// возвращал их к 0dB (requestBassHighRecenter()), но это уводило регуляторы в ноль при
+// каждом переключении Bypass, что оказалось нежелательным поведением
 void triggerBypassAnim() {
   bypassAnimMode = (settings[4] == 0) ? 1 : 2;
   bypassAnimStart = millis();
-  requestBassHighRecenter();
-  if (settings[4] == 1) { // Bypass только что включили — сохранённое в EEPROM положение больше не актуально
-    clearSavedBassHighPosition();
-  }
 }
 
 // Разовая анимация заливки (Bypass выключается) — не привязана к реальному значению,

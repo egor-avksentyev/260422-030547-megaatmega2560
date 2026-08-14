@@ -11,7 +11,7 @@
 #include "animations/color_animation.h"
 #include "animations/source_animation.h"
 
-U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
+U8G2_SSD1309_128X64_NONAME2_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
 
 // Надпись "bypass" в углу экрана — нужна на ВСЕХ экранах (не только карусели меню),
 // иначе при переключении Bypass из настроек конкретного пункта не видно подтверждения,
@@ -111,26 +111,43 @@ unsigned long lastMenuDrawTime() {
 void drawToggleSwitch(bool state) {
   waitForDisplayRedrawGap();
 
-  u8g2.setFont(u8g2_font_ncenB14_tr);
+  u8g2.setFont(TOGGLE_FONT);
   u8g2.clearBuffer();
 
-  // Отображаем название пункта меню в правом верхнем углу
-  u8g2.setCursor(20, 20);
+  // Отображаем название пункта меню
+  u8g2.setCursor(TOGGLE_LABEL_X, TOGGLE_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
 
-  // Отрисовка toggle switch
-  int x = 40;
-  int y = 40;
-  u8g2.drawFrame(x, y, 50, 18); // Рамка переключателя
+  // "Pill"-переключатель — позиция/размер через TOGGLE_* в hardware_settings.h. OFF:
+  // дорожка пустая (только контур), бегунок закрашен слева. ON: дорожка залита целиком,
+  // бегунок — "вырезанный" (setDrawColor(0)) кружок с контуром справа, чтобы не сливаться
+  // с залитой дорожкой на монохромном экране
+  int trackX = TOGGLE_SWITCH_X;
+  int trackY = TOGGLE_SWITCH_Y;
+  int trackW = TOGGLE_SWITCH_WIDTH;
+  int trackH = TOGGLE_SWITCH_HEIGHT;
+  int radius = trackH / 2;
+  int knobRadius = radius - TOGGLE_KNOB_MARGIN;
+  int knobY = trackY + radius;
+  int knobXOff = trackX + radius; // OFF — бегунок у левого края
+  int knobXOn = trackX + trackW - radius; // ON — бегунок у правого края
+
+  u8g2.drawRFrame(trackX, trackY, trackW, trackH, radius);
   if (state) {
-    u8g2.drawBox(x + 25, y, 25, 18); // Положение ON
-    u8g2.setCursor(x + 55, y + 15);
-    u8g2.print("On");
+    u8g2.drawRBox(trackX, trackY, trackW, trackH, radius);
+    u8g2.setDrawColor(0);
+    u8g2.drawDisc(knobXOn, knobY, knobRadius);
+    u8g2.setDrawColor(1);
+    u8g2.drawCircle(knobXOn, knobY, knobRadius);
   } else {
-    u8g2.drawBox(x, y, 25, 18); // Положение OFF
-    u8g2.setCursor(x - 35, y + 15);
-    u8g2.print("Off");
+    u8g2.drawDisc(knobXOff, knobY, knobRadius);
   }
+
+  // Подпись состояния — фиксированная позиция справа от дорожки (не скачет между
+  // сторонами, как было раньше)
+  u8g2.setFont(TOGGLE_STATE_FONT);
+  u8g2.setCursor(trackX + TOGGLE_STATE_TEXT_X_OFFSET, trackY + TOGGLE_STATE_TEXT_Y_OFFSET);
+  u8g2.print(state ? "On" : "Off");
 
   drawStatusIndicators();
 
@@ -187,28 +204,27 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
   Serial.print(unit);
   Serial.println(")");
 
-  // Рисуем кружок и стрелочку
-  int x = 20; // Круг в левой верхней части экрана
-  int y = 20;
-  int circleRadius = 14; // Кружок уменьшен на 30%
-  u8g2.drawCircle(x, y, circleRadius);
-  int needleLength = 18; // Длиннее радиуса — стрелка выходит за пределы кружка
-  int arrowX = x + needleLength * sin(radians(angleValue));
-  int arrowY = y - needleLength * cos(radians(angleValue));
+  // Рисуем кружок и стрелочку — позиция/размер настраиваются через ARROW_CIRCLE_*/
+  // ARROW_NEEDLE_LENGTH в hardware_settings.h
+  int x = ARROW_CIRCLE_X;
+  int y = ARROW_CIRCLE_Y;
+  u8g2.drawCircle(x, y, ARROW_CIRCLE_RADIUS);
+  int arrowX = x + ARROW_NEEDLE_LENGTH * sin(radians(angleValue));
+  int arrowY = y - ARROW_NEEDLE_LENGTH * cos(radians(angleValue));
   u8g2.drawLine(x, y, arrowX, arrowY); // Стрелочка
 
-  // Отрисовка стрелочек
+  // Отрисовка стрелочек направления — позиция/размер через ARROW_INDICATOR_Y_*/ARROW_*_X_*
   if (showArrowRight) {
-    u8g2.drawTriangle(110, 30, 120, 35, 110, 40); // Стрелочка вправо
+    u8g2.drawTriangle(ARROW_RIGHT_X_NEAR, ARROW_INDICATOR_Y_TOP, ARROW_RIGHT_X_FAR, ARROW_INDICATOR_Y_MID, ARROW_RIGHT_X_NEAR, ARROW_INDICATOR_Y_BOTTOM); // Стрелочка вправо
   }
   if (showArrowLeft) {
-    u8g2.drawTriangle(40, 30, 30, 35, 40, 40); // Стрелочка влево
+    u8g2.drawTriangle(ARROW_LEFT_X_NEAR, ARROW_INDICATOR_Y_TOP, ARROW_LEFT_X_FAR, ARROW_INDICATOR_Y_MID, ARROW_LEFT_X_NEAR, ARROW_INDICATOR_Y_BOTTOM); // Стрелочка влево
   }
 
-  // Отрисовка остальных элементов
-  u8g2.drawHLine(20, 45, 88);
-  int progressBarPos = map(potValue, valueMin, valueMax, 20, 108);
-  u8g2.drawBox(progressBarPos, 47, 4, 12);
+  // Отрисовка остальных элементов — позиция/размер через PROGRESS_LINE_*/PROGRESS_BAR_*
+  u8g2.drawHLine(PROGRESS_LINE_X, PROGRESS_LINE_Y, PROGRESS_LINE_WIDTH);
+  int progressBarPos = map(potValue, valueMin, valueMax, PROGRESS_BAR_X_MIN, PROGRESS_BAR_X_MAX);
+  u8g2.drawBox(progressBarPos, PROGRESS_BAR_Y, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT);
 
   // Счётчик %/dB — позиция и шрифт настраиваются через VALUE_*/VOLUME_VALUE_*
   u8g2.setFont(isVolume ? VOLUME_VALUE_FONT : VALUE_FONT);
@@ -221,7 +237,7 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
   u8g2.sendBuffer();
 }
 
-void drawDimmerScreen(int percent) {
+void drawDimmerScreen() {
   waitForDisplayRedrawGap();
 
   u8g2.setFont(DIMMER_LABEL_FONT);
@@ -230,14 +246,26 @@ void drawDimmerScreen(int percent) {
   u8g2.setCursor(DIMMER_LABEL_X, DIMMER_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
 
-  u8g2.setFont(DIMMER_VALUE_FONT);
-  u8g2.setCursor(DIMMER_VALUE_X, DIMMER_VALUE_Y);
-  u8g2.print(percent);
+  // Две строки — яркость колец и яркость дисплея; активная (та, что сейчас крутит Left/Right)
+  // отмечена "> " перед текстом, см. dimmerEditingDisplay (main.h), переключается Up/Down
+  u8g2.setFont(DIMMER_ROW_FONT);
+  u8g2.setCursor(DIMMER_ROW_X, DIMMER_ROW1_Y);
+  u8g2.print(dimmerEditingDisplay ? "  LED " : "> LED ");
+  u8g2.print(settings[currentMenuItem]);
+  u8g2.print("%");
+
+  u8g2.setCursor(DIMMER_ROW_X, DIMMER_ROW2_Y);
+  u8g2.print(dimmerEditingDisplay ? "> Display " : "  Display ");
+  u8g2.print(displayBrightness);
   u8g2.print("%");
 
   drawStatusIndicators();
 
   u8g2.sendBuffer();
+}
+
+void applyDisplayBrightness() {
+  u8g2.setContrast(map(displayBrightness, 0, 100, 0, 255));
 }
 
 void drawColorScreen(int colorIndex) {

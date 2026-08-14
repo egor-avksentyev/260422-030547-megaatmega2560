@@ -30,15 +30,27 @@ void encoderISR() {
 }
 
 void checkEncoderButton() {
-  static bool encoderButtonPressed = false;
+  static bool wasPressed = false;
   static unsigned long lastButtonPressTime = 0;
+  static unsigned long pressStartTime = 0;
+  static bool longPressHandled = false;
+  // Оценивается один раз, в момент физического нажатия — отличает клик, который САМ входит
+  // в настройки Dimmer (должен работать как обычно, даже если его удержать), от клика,
+  // сделанного уже ВНУТРИ Dimmer (там короткий клик/удержание значат другое, см. ниже)
+  static bool pressStartedInDimmer = false;
 
-  if (digitalRead(BUTTON_PIN) == LOW) {
-    if (!encoderButtonPressed) {
-      unsigned long currentTime = millis();
+  bool isPressed = (digitalRead(BUTTON_PIN) == LOW);
+
+  if (isPressed && !wasPressed) {
+    // Свежее нажатие
+    unsigned long currentTime = millis();
+    pressStartTime = currentTime;
+    longPressHandled = false;
+    pressStartedInDimmer = inSettingsMode && menuItems[currentMenuItem] == "Dimmer";
+
+    if (!pressStartedInDimmer) {
       if (currentTime - lastButtonPressTime < DOUBLE_CLICK_THRESHOLD_MS) {
         // Обнаружено двойное нажатие
-        encoderButtonPressed = true;
         inSettingsMode = false;
         resetCursor(); // Сбрасываем положение курсора при выходе из режима настроек
         encoderValue = 0; // Сбрасываем значение энкодера при выходе из режима настроек
@@ -46,13 +58,14 @@ void checkEncoderButton() {
         drawMenu();
       } else {
         // Одиночное нажатие, переключить режим настроек
-        encoderButtonPressed = true;
         inSettingsMode = !inSettingsMode;
         if (inSettingsMode) {
           if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
             drawToggleSwitch(settings[currentMenuItem] == 1);
           } else if (menuItems[currentMenuItem] == "Dimmer") {
-            drawDimmerScreen(settings[currentMenuItem]);
+            dimmerEditingDisplay = false; // Каждый новый вход в Dimmer начинается со строки LED
+            dimmerRowLocked = false; // ...и с выбора строки, а не редактирования значения
+            drawDimmerScreen();
           } else if (menuItems[currentMenuItem] == "Color") {
             drawColorScreen(settings[currentMenuItem]);
           } else if (menuItems[currentMenuItem] == "Source") {
@@ -69,7 +82,24 @@ void checkEncoderButton() {
       }
       lastButtonPressTime = currentTime;
     }
-  } else {
-    encoderButtonPressed = false;
+    // pressStartedInDimmer: короткий клик/долгое удержание обрабатываются ниже, по мере
+    // удержания и на отпускании — см. комментарии у DIMMER_EXIT_HOLD_MS в hardware_settings.h
+  } else if (isPressed && pressStartedInDimmer && !longPressHandled &&
+             millis() - pressStartTime >= DIMMER_EXIT_HOLD_MS) {
+    // Зажали кнопку внутри Dimmer на DIMMER_EXIT_HOLD_MS — выходим в карусель меню,
+    // независимо от того, были мы в выборе строки или в редактировании значения
+    longPressHandled = true;
+    inSettingsMode = false;
+    resetCursor();
+    encoderValue = 0;
+    stopAllMotors();
+    drawMenu();
+  } else if (!isPressed && wasPressed && pressStartedInDimmer && !longPressHandled) {
+    // Короткий клик внутри Dimmer (отпустили раньше, чем сработало удержание) —
+    // переключает "выбор строки" <-> "редактирование её значения" (см. dimmerRowLocked в main.h)
+    dimmerRowLocked = !dimmerRowLocked;
+    drawDimmerScreen();
   }
+
+  wasPressed = isPressed;
 }

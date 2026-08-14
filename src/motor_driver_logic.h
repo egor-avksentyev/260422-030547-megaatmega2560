@@ -18,9 +18,6 @@ void stopAllMotors();
 // (cancelBassRecenter()/cancelHighRecenter()), чтобы не бороться с ручным управлением
 void requestBassSeek(int targetRaw);
 void requestHighSeek(int targetRaw);
-// Обёртка над requestBassSeek/requestHighSeek с целью 0dB (bassZeroRaw()/highZeroRaw()) —
-// запускается при каждом переключении Bypass (в любую сторону, см. triggerBypassAnim())
-void requestBassHighRecenter();
 void updateBassHighRecenter();
 void cancelBassRecenter();
 void cancelHighRecenter();

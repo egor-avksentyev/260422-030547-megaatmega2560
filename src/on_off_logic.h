@@ -14,15 +14,20 @@ void powerOnScreen();
 void powerOffDevices();
 void powerOnDevices();
 
-// Долговременная (EEPROM) память положения Bass/High — только пока Bypass выключен, см.
-// комментарий у saveBassHighPositionOnShutdown() в on_off_logic.cpp. powerOnDevices()
-// сам восстанавливает сохранённое положение, если оно есть — снаружи нужно только
-// вызвать saveBassHighPositionOnShutdown() перед выключением и clearSavedBassHighPosition()
-// при включении Bypass (см. remote_control.cpp / animation_logic.cpp)
+// Долговременная (EEPROM) память положения Bass/High — пишется при КАЖДОМ выключении,
+// независимо от Bypass (см. комментарий у saveBassHighPositionOnShutdown() в
+// on_off_logic.cpp). powerOnDevices() сам восстанавливает сохранённое положение —
+// снаружи нужно только вызвать saveBassHighPositionOnShutdown() перед выключением
 void saveBassHighPositionOnShutdown();
-void clearSavedBassHighPosition();
 
 // Состояние Bypass — в отличие от положения Bass/High, сохраняется ПРИ КАЖДОМ выключении
 // (не только когда Bypass выключен) и восстанавливается самим powerOnDevices() при
 // следующем включении. Снаружи нужно только вызвать перед выключением
 void saveBypassStateOnShutdown();
+
+// Долговременная (EEPROM) память настроек Dimmer/Color — яркость колец (LED), яркость
+// дисплея (Display) и цвет колец (Color). В отличие от двух блоков выше, пишется сразу при
+// КАЖДОМ изменении значения (см. saveSettings() в main.cpp), а не только при выключении
+// питания; loadSettings() (main.cpp) вызывает загрузку в самом начале setup()
+void saveDimmerColorSettings();
+void loadDimmerColorSettings();

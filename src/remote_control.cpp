@@ -72,13 +72,20 @@ void handleRemoteInput() {
               triggerBypassAnim();
             }
           } else if (menuItems[currentMenuItem] == "Dimmer") {
-            settings[currentMenuItem] = constrain(settings[currentMenuItem] + 5, 0, 100);
-            applyRingDimmer();
-            drawDimmerScreen(settings[currentMenuItem]);
+            if (dimmerEditingDisplay) {
+              displayBrightness = constrain(displayBrightness + 5, 0, 100);
+              applyDisplayBrightness();
+            } else {
+              settings[currentMenuItem] = constrain(settings[currentMenuItem] + 5, 0, 100);
+              applyRingDimmer();
+            }
+            drawDimmerScreen();
+            saveSettings();
           } else if (menuItems[currentMenuItem] == "Color") {
             settings[currentMenuItem] = (settings[currentMenuItem] + 1) % RING_COLOR_COUNT;
             applyRingColorScheme();
             drawColorScreen(settings[currentMenuItem]);
+            saveSettings();
           } else if (menuItems[currentMenuItem] == "Source") {
             settings[currentMenuItem] = (settings[currentMenuItem] + 1) % SOURCE_COUNT;
             applySourceSelection();
@@ -104,13 +111,20 @@ void handleRemoteInput() {
               triggerBypassAnim();
             }
           } else if (menuItems[currentMenuItem] == "Dimmer") {
-            settings[currentMenuItem] = constrain(settings[currentMenuItem] - 5, 0, 100);
-            applyRingDimmer();
-            drawDimmerScreen(settings[currentMenuItem]);
+            if (dimmerEditingDisplay) {
+              displayBrightness = constrain(displayBrightness - 5, 0, 100);
+              applyDisplayBrightness();
+            } else {
+              settings[currentMenuItem] = constrain(settings[currentMenuItem] - 5, 0, 100);
+              applyRingDimmer();
+            }
+            drawDimmerScreen();
+            saveSettings();
           } else if (menuItems[currentMenuItem] == "Color") {
             settings[currentMenuItem] = (settings[currentMenuItem] - 1 + RING_COLOR_COUNT) % RING_COLOR_COUNT;
             applyRingColorScheme();
             drawColorScreen(settings[currentMenuItem]);
+            saveSettings();
           } else if (menuItems[currentMenuItem] == "Source") {
             settings[currentMenuItem] = (settings[currentMenuItem] - 1 + SOURCE_COUNT) % SOURCE_COUNT;
             applySourceSelection();
@@ -133,7 +147,9 @@ void handleRemoteInput() {
             if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
               drawToggleSwitch(settings[currentMenuItem] == 1);
             } else if (menuItems[currentMenuItem] == "Dimmer") {
-              drawDimmerScreen(settings[currentMenuItem]);
+              dimmerEditingDisplay = false; // Каждый новый вход в Dimmer начинается со строки LED
+              dimmerRowLocked = false; // ...и с выбора строки, а не редактирования значения (энкодер)
+              drawDimmerScreen();
             } else if (menuItems[currentMenuItem] == "Color") {
               drawColorScreen(settings[currentMenuItem]);
             } else if (menuItems[currentMenuItem] == "Source") {
@@ -191,7 +207,9 @@ void handleRemoteInput() {
             } else if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
               drawToggleSwitch(settings[currentMenuItem] == 1);
             } else if (menuItems[currentMenuItem] == "Dimmer") {
-              drawDimmerScreen(settings[currentMenuItem]);
+              // Просто перерисовка текущего экрана после Unmute — dimmerEditingDisplay НЕ
+              // сбрасываем (в отличие от свежего входа через Enter), строка остаётся той же
+              drawDimmerScreen();
             } else if (menuItems[currentMenuItem] == "Color") {
               drawColorScreen(settings[currentMenuItem]);
             } else if (menuItems[currentMenuItem] == "Source") {
@@ -222,6 +240,11 @@ void handleRemoteInput() {
             motorControl2(SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
             lastMotorInputTime = millis();
             drawArrowIndicator(0, true, false);
+          } else if (menuItems[currentMenuItem] == "Dimmer" && dimmerEditingDisplay) {
+            // Up — выбрать верхнюю строку (яркость колец); внутри Dimmer Up/Down не
+            // трогают Volume вообще (см. main.h у dimmerEditingDisplay)
+            dimmerEditingDisplay = false;
+            drawDimmerScreen();
           }
         } else {
           // На карусели (не в настройках) Up/Down крутят Volume прямо отсюда, без захода
@@ -251,6 +274,10 @@ void handleRemoteInput() {
             motorControl2(-SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
             lastMotorInputTime = millis();
             drawArrowIndicator(0, false, true);
+          } else if (menuItems[currentMenuItem] == "Dimmer" && !dimmerEditingDisplay) {
+            // Down — выбрать нижнюю строку (яркость дисплея)
+            dimmerEditingDisplay = true;
+            drawDimmerScreen();
           }
         } else {
           beginVolumeOverlay();

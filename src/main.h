@@ -19,7 +19,8 @@ extern unsigned long lastMotorInputTime;
 
 // "Volume" остаётся обычным пунктом карусели (Enter/навигация работают как всегда), но
 // ДОПОЛНИТЕЛЬНО Up/Down с пульта работают как глобальный шорткат громкости из любого
-// другого места (кроме случаев, когда ты именно внутри Bass/High) — временно подставляют
+// другого места (кроме случаев, когда ты именно внутри Bass/High/Dimmer — внутри Dimmer
+// Up/Down переключают строку яркости, см. dimmerEditingDisplay ниже) — временно подставляют
 // currentMenuItem под "Volume" и откатывают обратно, когда автостоп мотора решит, что
 // кнопку отпустили (см. beginVolumeOverlay()/endVolumeOverlay())
 extern bool volumeOverlayActive;
@@ -32,6 +33,28 @@ void redrawCurrentScreen();
 extern bool sourceOverlayActive;
 void beginSourceOverlay();
 void updateSourceOverlay();
+
+// Экран Dimmer теперь регулирует два значения — яркость колец (settings[currentMenuItem],
+// как раньше) и яркость дисплея (displayBrightness, новое). dimmerEditingDisplay — какая из
+// двух строк сейчас активна (false = кольца, true = дисплей); переключается Up/Down на
+// пульте, только пока ты внутри Dimmer (см. IR_UP/IR_DOWN в remote_control.cpp). Сбрасывается
+// в false при каждом новом входе в Dimmer, чтобы не запутаться, где остановился прошлый раз
+extern int displayBrightness;
+extern bool dimmerEditingDisplay;
+
+// Пока false, вращение энкодера (только само колесо, не пульт — см. checkEncoderButton() в
+// encoder.cpp) внутри Dimmer просто двигает подсветку между строками LED/Display
+// (dimmerEditingDisplay), не меняя значений — переключиться в редактирование подсвеченной
+// строки нужно коротким кликом энкодера. true — вращение меняет значение подсвеченной
+// строки; повторный клик возвращает к выбору строки. Сбрасывается в false при каждом новом
+// входе в Dimmer. Пульт (Left/Right/Up/Down) этот флаг не проверяет — там всё как раньше
+extern bool dimmerRowLocked;
+
+// Индексы "Dimmer"/"Color" в menuItems[]/settings[] — нужны там, где currentMenuItem не
+// гарантированно указывает на них (например при загрузке/сохранении в EEPROM, см.
+// on_off_logic.cpp)
+int dimmerMenuIndex();
+int colorMenuIndex();
 
 #define MENU_ITEM_COUNT 8
 
