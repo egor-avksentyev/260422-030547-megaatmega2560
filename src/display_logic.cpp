@@ -70,21 +70,15 @@ void drawMenu() {
   u8g2.setFont(MENU_TITLE_FONT);
   u8g2.clearBuffer();
 
-  // Точки меню в 2 ряда по MENU_DOTS_PER_ROW
-  int totalWidth = MENU_DOTS_PER_ROW * MENU_DOT_SPACING_X;
-  int startX = (MENU_DOT_CENTER_WIDTH - totalWidth) / 2; // Вычисление стартовой позиции
+  // Индикатор текущего пункта — одна строка вертикальных палочек, по одной на пункт;
+  // активная смещена вниз относительно остальных (см. MENU_BAR_* в hardware_settings.h)
+  int totalWidth = (MENU_ITEM_COUNT - 1) * MENU_BAR_SPACING_X;
+  int startX = (128 - totalWidth) / 2 + MENU_BAR_X_OFFSET;
 
   for (int i = 0; i < MENU_ITEM_COUNT; i++) {
-    int row = i / MENU_DOTS_PER_ROW;
-    int col = i % MENU_DOTS_PER_ROW;
-    int rowXOffset = (row == 0) ? MENU_DOT_ROW1_X_OFFSET : MENU_DOT_ROW2_X_OFFSET;
-    int x = startX + col * MENU_DOT_SPACING_X + rowXOffset;
-    int y = MENU_DOT_ROW1_Y + row * MENU_DOT_ROW_SPACING_Y;
-    if (i == currentMenuItem) {
-      u8g2.drawDisc(x, y, MENU_DOT_RADIUS, U8G2_DRAW_ALL);
-    } else {
-      u8g2.drawCircle(x, y, MENU_DOT_RADIUS);
-    }
+    int x = startX + i * MENU_BAR_SPACING_X;
+    int y = MENU_BAR_Y + (i == currentMenuItem ? MENU_BAR_SELECTED_Y_OFFSET : 0);
+    u8g2.drawBox(x, y, MENU_BAR_WIDTH, MENU_BAR_HEIGHT);
   }
 
   u8g2.setCursor((128 - u8g2.getStrWidth(menuItems[currentMenuItem].c_str())) / 2 + MENU_TITLE_X_OFFSET, MENU_TITLE_Y);
