@@ -16,6 +16,24 @@ void initRemoteControl() {
   IrReceiver.begin(IR_PIN, ENABLE_LED_FEEDBACK);
 }
 
+// Перерисовка drawArrowIndicator() (кружок+стрелка+кольцо) на КАЖДЫЙ repeat-кадр Up/Down
+// (~раз в 114мс, пока держишь кнопку) была лишней — тот же экран и так обновляется отдельным
+// таймером в loop() (main.cpp, "живое обновление положения ручки", каждые 200мс). Хуже того:
+// updateVolumeRing()/renderDbRing() внутри дёргают NeoPixel .show(), который на AVR ненадолго
+// выключает прерывания ради тайминга протокола ленты — если это окно изредка накладывалось на
+// приём очередного RC5-кадра, кадр терялся, и мотор коротко останавливался (пока не придёт
+// следующий кадр в пределах SLIDER_MOTOR_IDLE_TIMEOUT) — снаружи выглядело как "мотор дёрнулся
+// и продолжил" при удержании Up/Down. Троттлинг ЭТОЙ перерисовки (не команды на мотор и не
+// lastMotorInputTime — они обновляются всегда, без троттлинга) убирает лишние .show() без
+// потери отзывчивости движения
+static void throttledSliderRedraw(bool showArrowRight, bool showArrowLeft) {
+  static unsigned long lastRedrawTime = 0;
+  if (millis() - lastRedrawTime >= 150) {
+    lastRedrawTime = millis();
+    drawArrowIndicator(0, showArrowRight, showArrowLeft);
+  }
+}
+
 void handleRemoteInput() {
   if (IrReceiver.decode()) {
     if (IrReceiver.decodedIRData.protocol != IR_PROTOCOL || IrReceiver.decodedIRData.address != IR_ADDRESS) {
@@ -246,17 +264,17 @@ void handleRemoteInput() {
             cancelBassRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
             motorControl(SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
             lastMotorInputTime = millis();
-            drawArrowIndicator(0, true, false);
+            throttledSliderRedraw(true, false);
           } else if (menuItems[currentMenuItem] == "High") {
             cancelHighRecenter(); // Ручное управление пультом отменяет автовозврат после Bypass
             motorControl(SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
             lastMotorInputTime = millis();
-            drawArrowIndicator(0, true, false);
+            throttledSliderRedraw(true, false);
           } else if (menuItems[currentMenuItem] == "Volume") {
             cancelVolumeSeek(); // Ручное управление пультом отменяет автовозврат к целевой громкости после включения питания
             motorControl2(SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
             lastMotorInputTime = millis();
-            drawArrowIndicator(0, true, false);
+            throttledSliderRedraw(true, false);
           } else if (menuItems[currentMenuItem] == "Dimmer" && dimmerEditingDisplay) {
             // Up — выбрать верхнюю строку (яркость колец); внутри Dimmer Up/Down не
             // трогают Volume вообще (см. main.h у dimmerEditingDisplay)
@@ -277,7 +295,7 @@ void handleRemoteInput() {
           cancelVolumeSeek();
           motorControl2(SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
           lastMotorInputTime = millis();
-          drawArrowIndicator(0, true, false);
+          throttledSliderRedraw(true, false);
         }
         break;
       case IR_DOWN: // Симметрично IR_UP, в другую сторону
@@ -286,17 +304,17 @@ void handleRemoteInput() {
             cancelBassRecenter();
             motorControl(-SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
             lastMotorInputTime = millis();
-            drawArrowIndicator(0, false, true);
+            throttledSliderRedraw(false, true);
           } else if (menuItems[currentMenuItem] == "High") {
             cancelHighRecenter();
             motorControl(-SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
             lastMotorInputTime = millis();
-            drawArrowIndicator(0, false, true);
+            throttledSliderRedraw(false, true);
           } else if (menuItems[currentMenuItem] == "Volume") {
             cancelVolumeSeek();
             motorControl2(-SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
             lastMotorInputTime = millis();
-            drawArrowIndicator(0, false, true);
+            throttledSliderRedraw(false, true);
           } else if (menuItems[currentMenuItem] == "Dimmer" && !dimmerEditingDisplay) {
             // Down — выбрать нижнюю строку (яркость дисплея)
             dimmerEditingDisplay = true;
@@ -312,7 +330,7 @@ void handleRemoteInput() {
           cancelVolumeSeek();
           motorControl2(-SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
           lastMotorInputTime = millis();
-          drawArrowIndicator(0, false, true);
+          throttledSliderRedraw(false, true);
         }
         break;
       case IR_SET: {

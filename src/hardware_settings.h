@@ -356,10 +356,10 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 
 // --- Экран настроек Volume ---
 #define VOLUME_LABEL_FONT u8g2_font_ncenB08_tr
-#define VOLUME_LABEL_X 45
+#define VOLUME_LABEL_X 43
 #define VOLUME_LABEL_Y 30
 #define VOLUME_VALUE_FONT u8g2_font_ncenB10_tr
-#define VOLUME_VALUE_X 95
+#define VOLUME_VALUE_X 90
 #define VOLUME_VALUE_Y 30
 
 // --- Общие элементы экрана Bass/High/Volume (drawArrowIndicator() в display_logic.cpp) —
