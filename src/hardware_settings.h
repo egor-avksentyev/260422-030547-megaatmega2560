@@ -327,12 +327,20 @@ const RingColor ringColorPalette[RING_COLOR_COUNT] = {
 #define VOLUME_POT_MIN_SNAP_RAW 1 // 0-25% сжаты в 5 raw-отсчётов — большой запас "съедал" бы точку 25%
 #define VOLUME_POT_MAX_SNAP_RAW 10
 
-const int bassPotCalRaw[] = {7, 12, 21, 109, 159, 191, 233, 588, 1010};
-const int bassPotCalValue[] = {-10, -8, -5, -2, -1, 0, 1, 5, 10};
+// -8dB нет отдельной точкой ни у Bass, ни у High — дорожка потенциометра логарифмическая,
+// и в самом низу шкалы (примерно от -8dB и до полного физического упора к -10dB) её
+// сопротивление меняется настолько мало, что ADC (даже усреднённый по 64 сэмплам) отдаёт
+// одно и то же raw (~1) на всём этом участке — измерено на месте (см. пользовательский
+// замер "-8dB = 1 raw"), это не шум и не баг: в этой зоне физически нет данных, чтобы
+// различить -8dB и -10dB. Поэтому нижняя калибровочная точка (-10dB) просто сдвинута на
+// этот измеренный "пол" — вся мёртвая зона честно схлопывается в -10dB, а не в
+// придуманную непроверяемую -8dB
+const int bassPotCalRaw[] = {1, 12, 81, 159, 191, 233, 588, 1010};
+const int bassPotCalValue[] = {-10, -5, -2, -1, 0, 1, 5, 10};
 const int bassPotCalPoints = sizeof(bassPotCalRaw) / sizeof(bassPotCalRaw[0]);
 
-const int highPotCalRaw[] = {8, 11, 21, 202, 254, 660, 1010};
-const int highPotCalValue[] = {-10, -8, -5, 0, 1, 5, 10};
+const int highPotCalRaw[] = {1, 10, 88, 202, 254, 660, 1010};
+const int highPotCalValue[] = {-10, -5, -2, 0, 1, 5, 10};
 const int highPotCalPoints = sizeof(highPotCalRaw) / sizeof(highPotCalRaw[0]);
 
 const int volumePotCalRaw[] = {0, 5, 178, 569, 1020};
