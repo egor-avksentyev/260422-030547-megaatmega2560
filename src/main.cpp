@@ -24,10 +24,11 @@
 #include "animations/dimmer_animation.h"
 #include "animations/color_animation.h"
 #include "animations/source_animation.h"
+#include "animations/eq_animation.h"
 
-String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source"};
+String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source", "EQ"};
 int currentMenuItem = 0;
-int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT, 0}; // VU Meter "включено", Bypass "выключено", Dimmer/Color колец, Source по умолчанию
+int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT, 0, 0}; // VU Meter "включено", Bypass "выключено", Dimmer/Color колец, Source/EQ по умолчанию (EQ = Flat, индекс 0)
 bool inSettingsMode = false;
 bool isMuted = false; // Флаг для состояния Mute
 unsigned long lastMotorInputTime = 0; // Момент последней команды на мотор Bass/High/Volume (для авто-стопа)
@@ -84,6 +85,15 @@ int vuMeterMenuIndex() {
   return 0; // Не должно случаться — "VU Meter" всегда есть в menuItems[]
 }
 
+int eqMenuIndex() {
+  for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    if (menuItems[i] == "EQ") {
+      return i;
+    }
+  }
+  return 0; // Не должно случаться — "EQ" всегда есть в menuItems[]
+}
+
 // Перерисовывает экран, который сейчас должен быть виден по inSettingsMode/currentMenuItem —
 // нужно, чтобы после отпускания Up/Down (глобальный шорткат громкости, см. beginVolumeOverlay())
 // вернуть на экран именно то, что было до него (карусель или конкретный экран настройки)
@@ -98,6 +108,8 @@ void redrawCurrentScreen() {
     drawColorScreen(settings[currentMenuItem]);
   } else if (menuItems[currentMenuItem] == "Source") {
     drawSourceScreen(settings[currentMenuItem]);
+  } else if (menuItems[currentMenuItem] == "EQ") {
+    drawEqScreen(settings[currentMenuItem]);
   } else {
     drawArrowIndicator(settings[currentMenuItem], false, false);
   }
@@ -370,6 +382,11 @@ void loop() {
           encoderValue = 0;
           applySourceSelection();
           drawSourceScreen(settings[currentMenuItem]);
+        } else if (menuItems[currentMenuItem] == "EQ") {
+          settings[currentMenuItem] = ((settings[currentMenuItem] + direction) % EQ_COUNT + EQ_COUNT) % EQ_COUNT;
+          encoderValue = 0;
+          applyEqPreset(settings[currentMenuItem]);
+          drawEqScreen(settings[currentMenuItem]);
         }
       }
     }
@@ -407,6 +424,8 @@ void loop() {
       animateColorIconPartial(MENU_ICON_X, MENU_ICON_Y);
     } else if (menuItems[currentMenuItem] == "Source") {
       animateSourceIconPartial(MENU_ICON_X, MENU_ICON_Y);
+    } else if (menuItems[currentMenuItem] == "EQ") {
+      animateEqIconPartial(EQ_ICON_X, EQ_ICON_Y);
     }
   }
 

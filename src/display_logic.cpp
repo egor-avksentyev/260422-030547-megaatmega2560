@@ -10,6 +10,7 @@
 #include "animations/dimmer_animation.h"
 #include "animations/color_animation.h"
 #include "animations/source_animation.h"
+#include "animations/eq_animation.h"
 
 U8G2_SSD1309_128X64_NONAME2_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
 
@@ -98,6 +99,8 @@ void drawMenu() {
     drawColorAnim(MENU_ICON_X, MENU_ICON_Y);
   } else if (menuItems[currentMenuItem] == "Source") {
     drawSourceAnim(MENU_ICON_X, MENU_ICON_Y);
+  } else if (menuItems[currentMenuItem] == "EQ") {
+    drawEqAnim(EQ_ICON_X, EQ_ICON_Y);
   }
 
   drawStatusIndicators();
@@ -375,6 +378,44 @@ void drawSourceScreen(int sourceIndex) {
     drawHighlightedRow(SOURCE_LIST_X, y, sourceNames[i], i == sourceIndex,
       SOURCE_ROW_HIGHLIGHT_PAD_X, SOURCE_ROW_HIGHLIGHT_PAD_Y, SOURCE_ROW_HIGHLIGHT_RADIUS,
       SOURCE_ROW_DOT_RADIUS, SOURCE_ROW_DOT_X_OFFSET);
+  }
+
+  drawStatusIndicators();
+
+  u8g2.sendBuffer();
+}
+
+void drawEqScreen(int eqIndex) {
+  waitForDisplayRedrawGap();
+
+  u8g2.setFont(EQ_LABEL_FONT);
+  u8g2.clearBuffer();
+
+  // По центру экрана, а не выровнено по левому краю, как у Source/Dimmer — тут заголовок
+  // короткий ("EQ"), список ниже сам по себе достаточно широкий, чтобы не тесниться с ним
+  int labelX = (128 - u8g2.getStrWidth("EQ")) / 2;
+  u8g2.setCursor(labelX, EQ_LABEL_Y);
+  u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(labelX, EQ_LABEL_Y, "EQ", EQ_LABEL_UNDERLINE_Y_OFFSET);
+
+  // EQ_COUNT пресетов не помещаются на экране все разом (EQ_LIST_VISIBLE_ROWS зараз,
+  // в отличие от Source, где SOURCE_COUNT подобран так, чтобы влезть целиком) — окно
+  // центрируется на выбранном пункте и не выходит за границы списка
+  int windowStart = eqIndex - (EQ_LIST_VISIBLE_ROWS - 1) / 2;
+  windowStart = constrain(windowStart, 0, max(0, EQ_COUNT - EQ_LIST_VISIBLE_ROWS));
+
+  u8g2.setFont(EQ_LIST_FONT);
+  for (int row = 0; row < EQ_LIST_VISIBLE_ROWS; row++) {
+    int i = windowStart + row;
+    if (i >= EQ_COUNT) {
+      break;
+    }
+    int y = EQ_LIST_Y_START + row * EQ_LIST_LINE_HEIGHT;
+    char rowText[24];
+    snprintf(rowText, sizeof(rowText), "%-9s H%+d B%+d", eqPresets[i].name, eqPresets[i].highDb, eqPresets[i].bassDb);
+    drawHighlightedRow(EQ_LIST_X, y, rowText, i == eqIndex,
+      EQ_ROW_HIGHLIGHT_PAD_X, EQ_ROW_HIGHLIGHT_PAD_Y, EQ_ROW_HIGHLIGHT_RADIUS,
+      EQ_ROW_DOT_RADIUS, EQ_ROW_DOT_X_OFFSET);
   }
 
   drawStatusIndicators();

@@ -57,8 +57,9 @@ int dimmerMenuIndex();
 int colorMenuIndex();
 int sourceMenuIndex();
 int vuMeterMenuIndex();
+int eqMenuIndex();
 
-#define MENU_ITEM_COUNT 8
+#define MENU_ITEM_COUNT 9
 
 void resetCursor();
 void saveSettings();

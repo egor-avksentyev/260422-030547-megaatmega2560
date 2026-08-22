@@ -189,6 +189,8 @@ void handleRemoteInput() {
               drawColorScreen(settings[currentMenuItem]);
             } else if (menuItems[currentMenuItem] == "Source") {
               drawSourceScreen(settings[currentMenuItem]);
+            } else if (menuItems[currentMenuItem] == "EQ") {
+              drawEqScreen(settings[currentMenuItem]);
             } else {
               drawArrowIndicator(settings[currentMenuItem], false, false);
             }
@@ -249,6 +251,8 @@ void handleRemoteInput() {
               drawColorScreen(settings[currentMenuItem]);
             } else if (menuItems[currentMenuItem] == "Source") {
               drawSourceScreen(settings[currentMenuItem]);
+            } else if (menuItems[currentMenuItem] == "EQ") {
+              drawEqScreen(settings[currentMenuItem]);
             } else {
               drawArrowIndicator(settings[currentMenuItem], false, false);
             }
@@ -286,6 +290,12 @@ void handleRemoteInput() {
             settings[currentMenuItem] = (settings[currentMenuItem] - 1 + SOURCE_COUNT) % SOURCE_COUNT;
             applySourceSelection();
             drawSourceScreen(settings[currentMenuItem]);
+          } else if (menuItems[currentMenuItem] == "EQ") {
+            // EQ — тоже список (drawEqScreen()), тот же принцип навигации, что у Source;
+            // Right/Left тут не действуют
+            settings[currentMenuItem] = (settings[currentMenuItem] - 1 + EQ_COUNT) % EQ_COUNT;
+            applyEqPreset(settings[currentMenuItem]);
+            drawEqScreen(settings[currentMenuItem]);
           }
         } else {
           // На карусели (не в настройках) Up/Down крутят Volume прямо отсюда, без захода
@@ -324,6 +334,11 @@ void handleRemoteInput() {
             settings[currentMenuItem] = (settings[currentMenuItem] + 1) % SOURCE_COUNT;
             applySourceSelection();
             drawSourceScreen(settings[currentMenuItem]);
+          } else if (menuItems[currentMenuItem] == "EQ") {
+            // Down — двигает подсветку вниз (к следующему пресету), симметрично IR_UP
+            settings[currentMenuItem] = (settings[currentMenuItem] + 1) % EQ_COUNT;
+            applyEqPreset(settings[currentMenuItem]);
+            drawEqScreen(settings[currentMenuItem]);
           }
         } else {
           beginVolumeOverlay();
@@ -384,6 +399,7 @@ void handleRemoteInput() {
             saveBassHighPositionOnShutdown(); // Пока моторы ещё не сдвинуты — иначе тут же перезапишет 0dB/0%
             saveSourceStateOnShutdown(); // Переживает настоящее отключение питания, не только Standby
             saveVuMeterStateOnShutdown(); // Аналогично Source/Bypass
+            saveEqStateOnShutdown(); // Приоритет сохранения — EQ-пресет или ручная правка Bass/High, смотря что было последним (см. on_off_logic.cpp)
             saveDimmerColorSettings(); // Уже пишется на каждое изменение (see main.cpp), но лишний раз не помешает
             seekBassHighVolumeToZeroBlocking(); // Сначала все моторы едут в ноль...
             delay(100); // Небольшая задержка для гарантированного отключения

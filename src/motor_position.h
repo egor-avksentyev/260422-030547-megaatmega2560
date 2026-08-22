@@ -23,3 +23,9 @@ bool currentPotIsDb();
 // а не просто до края зоны снапа — иначе не докручивает несколько градусов до истинного нуля
 int bassZeroRaw();
 int highZeroRaw();
+
+// Обратная интерполяция: целевое значение (дБ/%) -> raw ADC. Зеркало potRawToPercent() в
+// обратную сторону, без снапа (снап нужен только для отображения, а не для командной цели) —
+// используется EQ-пресетами (applyEqPreset() в motor_driver_logic.cpp), чтобы перевести
+// произвольное значение дБ пресета в raw-цель для requestBassSeek()/requestHighSeek()
+int valueToRaw(int targetValue, const int calRaw[], const int calValue[], int calPoints);

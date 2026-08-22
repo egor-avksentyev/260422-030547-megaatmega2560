@@ -55,6 +55,12 @@
 #define MENU_ICON_Y 10 // По центру вертикали ((64-32)/2)
 #define MENU_ICON_FRAME_DELAY_MS 42 // Задержка между кадрами внутри анимации
 //
+// Позиция иконки EQ — отдельная от общих MENU_ICON_X/Y выше (см. drawEqAnim()/
+// animateEqIconPartial() в eq_animation.cpp и их вызовы в display_logic.cpp/main.cpp).
+// По умолчанию совпадает с общей позицией — подвинь эти два числа, если кадры анимации EQ
+// нарисованы не по центру своего кадра 32x32 и её нужно сдвинуть относительно остальных
+#define EQ_ICON_X 5 // Совпадает с MENU_ICON_X по умолчанию — поменяй это число, чтобы сдвинуть иконку EQ по горизонтали
+#define EQ_ICON_Y 10 // Совпадает с MENU_ICON_Y по умолчанию — поменяй это число, чтобы сдвинуть иконку EQ по вертикали
 // main.cpp перерисовывает только тайлы под самой иконкой через u8g2.updateDisplayArea()
 // (не весь drawMenu()) — полная SPI-передача экрана (1024 байта) слишком часто конфликтовала
 // с перерисовкой от навигации (см. подробный разбор и историю фикса в CLAUDE.md, раздел
@@ -103,8 +109,15 @@
 #define VOLUME_SEEK_EPSILON_PERCENT 2 // Аналог MOTOR_RECENTER_RAW_EPSILON для Volume, но в % (не raw) — см. requestVolumeSeek()
 
 // --- Выключение/включение питания: моторы и долговременная память положения Bass/High ---
-#define MOTOR_ZERO_TIMEOUT_MS 3000 // Максимум ждём при выключении, пока Bass/High/Volume доедут до нуля —
-// предохранитель на случай упора/заклинившего потенциометра, чтобы не блокировать выключение навечно
+#define MOTOR_ZERO_TIMEOUT_MS 6000 // Максимум ждём при выключении, пока Bass/High/Volume доедут до нуля —
+// предохранитель на случай упора/заклинившего потенциометра, чтобы не блокировать выключение навечно.
+// Было 3000 — хватало только на "типичный" случай (Volume около VOLUME_POWERON_TARGET_PERCENT=30%
+// или ниже). При включённой на полную громкости (100%) моторы Bass/High/Volume едут к нулю все
+// вместе на одном общем таймауте (seekBassHighVolumeToZeroBlocking()), а полный ход Volume
+// 100%->0% на фиксированной скорости SLIDER_MOTOR_SPEED физически занимает заметно больше
+// времени, чем короткий ход от 30% — таймаут истекал раньше, чем ручка Volume реально доезжала
+// до нуля, и stopAllMotors() глушил мотор на середине пути (~50%). Если после прошивки ручка
+// всё ещё не успевает доехать от 100% при выключении — увеличивай дальше по тому же принципу
 #define VOLUME_POWERON_TARGET_PERCENT 30 // Volume всегда стартует с этого % при включении питания —
 // вне зависимости от Bypass и от того, что было в EEPROM (там хранится только Bass/High, см. on_off_logic.cpp)
 // Два независимых слота EEPROM — разные адреса, чтобы не пересекались (см. on_off_logic.cpp):
@@ -327,6 +340,20 @@ const RingColor ringColorPalette[RING_COLOR_COUNT] = {
 #define VOLUME_POT_MIN_SNAP_RAW 1 // 0-25% сжаты в 5 raw-отсчётов — большой запас "съедал" бы точку 25%
 #define VOLUME_POT_MAX_SNAP_RAW 10
 
+// Мёртвая зона у нижнего края хода Volume (0-10%) — физически последний участок дорожки
+// почти не меняет сопротивление, поэтому обычный seek по проценту (updateVolumeSeek()) может
+// посчитать, что уже доехал, хотя ручка физически ещё не у истинного нуля — раз ADC внутри
+// этой зоны не меняется, узнать по фидбэку, сколько хода осталось, невозможно в принципе.
+// Применяется ТОЛЬКО при выключении (seekBassHighVolumeToZeroBlocking() в
+// motor_driver_logic.cpp) — не во время обычного ручного управления, чтобы не гонять мотор
+// в механический упор каждый раз, когда пользователь просто оставил громкость тихой
+#define VOLUME_ZERO_DEADZONE_PERCENT 10
+// Слепой (без сверки с потенциометром) доворот мотора Volume после обычного seek — на случай,
+// если тот отчитался "доехал" ещё внутри мёртвой зоны. Обычной точности seek по raw-цели тут
+// мало (см. выше) — нужен доворот на большее время, с запасом заметно больше, чем ушло бы на
+// 10° поворота вала, чтобы гарантированно дойти до физического упора, а не до края мёртвой зоны
+#define VOLUME_ZERO_BLIND_PUSH_MS 1000
+
 // -8dB нет отдельной точкой ни у Bass, ни у High — дорожка потенциометра логарифмическая,
 // и в самом низу шкалы (примерно от -8dB и до полного физического упора к -10dB) её
 // сопротивление меняется настолько мало, что ADC (даже усреднённый по 64 сэмплам) отдаёт
@@ -490,6 +517,47 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 // Подчёркивание названия пункта меню — см. DIMMER_LABEL_UNDERLINE_Y_OFFSET выше
 #define SOURCE_LABEL_UNDERLINE_Y_OFFSET 3
 
+// --- Пункт меню "EQ" — список готовых пресетов темброблока (Bass/High), список
+// прокручивается (EQ_COUNT больше, чем помещается строк на экране за раз, в отличие от
+// Source) — см. drawEqScreen() в display_logic.cpp, применение — applyEqPreset() в
+// motor_driver_logic.cpp (двигает моторы Bass/High через тот же seek-механизм, что и
+// автовозврат, а не реле, как у Source) ---
+struct EqPreset {
+  const char* name;
+  int8_t bassDb;
+  int8_t highDb;
+};
+#define EQ_COUNT 10
+const EqPreset eqPresets[EQ_COUNT] = {
+  {"Flat",       0,  0},
+  {"Jazz",       2,  3},
+  {"Rock",       5,  4},
+  {"Pop",        2,  2},
+  {"Classical", -2,  3},
+  {"Vocal",     -3,  4},
+  {"Electronic", 7,  5},
+  {"Hip-Hop",    9,  1},
+  {"Acoustic",   3,  3},
+  {"Lounge",     1, -1},
+};
+
+#define EQ_LABEL_FONT u8g2_font_ncenB08_tr // Меньше, чем у Source/Dimmer — заголовок тут по центру, не занимает угол
+#define EQ_LABEL_Y 11
+#define EQ_LIST_FONT u8g2_font_ncenB08_tr
+#define EQ_LIST_X 4
+#define EQ_LIST_Y_START 25 // Y (baseline) первой видимой строки списка
+#define EQ_LIST_LINE_HEIGHT 12
+#define EQ_LIST_VISIBLE_ROWS 4 // Сколько строк видно за раз — EQ_COUNT=10 больше, список прокручивается вокруг выбранного пункта
+#define EQ_ROW_HIGHLIGHT_PAD_X 2
+#define EQ_ROW_HIGHLIGHT_PAD_Y 2
+#define EQ_ROW_HIGHLIGHT_RADIUS 3
+#define EQ_ROW_DOT_RADIUS 1
+#define EQ_ROW_DOT_X_OFFSET 6
+// Подчёркивание названия пункта меню — см. DIMMER_LABEL_UNDERLINE_Y_OFFSET выше
+#define EQ_LABEL_UNDERLINE_Y_OFFSET 3
+
+#define EEPROM_EQ_STATE_ADDR 40 // Следующий свободный слот после EEPROM_VU_METER_STATE_ADDR (32)
+
 // --- Название текущего пункта меню (крупный текст по центру) на экране drawMenu() ---
 // _tr, а не _tf — пункты меню это обычный ASCII (Bass/High/Volume/...), полный юникод-набор
 // _tf не нужен, а весит заметно больше (экономия ~2.6КБ в зоне PROGMEM-шрифтов, см. память
@@ -505,8 +573,13 @@ const int volumePotCalPoints = sizeof(volumePotCalRaw) / sizeof(volumePotCalRaw[
 // новая (под currentMenuItem) съезжает вниз ---
 #define MENU_BAR_WIDTH 3 // Толщина палочки
 #define MENU_BAR_HEIGHT 8 // Высота палочки
-#define MENU_BAR_SPACING_X 8 // Расстояние между палочками по горизонтали (8 пунктов * 8 = умещается в 128px)
-#define MENU_BAR_X_OFFSET 30 // Доп. сдвиг всей строки палочек по X (+ вправо, - влево) относительно центра экрана
+#define MENU_BAR_SPACING_X 8 // Расстояние между палочками по горизонтали (MENU_ITEM_COUNT палочек * 8 умещается в 128px)
+#define MENU_BAR_X_OFFSET 22 // Доп. сдвиг всей строки палочек по X (+ вправо, - влево) относительно центра экрана.
+// Было 30 — с 8 пунктами это ещё укладывалось в 128px, но с добавлением 9-го (EQ) строка
+// стала на 8px шире и с прежним сдвигом вылезала за правый край экрана (последняя палочка
+// рисовалась частично за пределами видимой области). Если добавишь ещё пункты меню — проверь
+// этот отступ заново: правая граница строки = (128-totalWidth)/2 + это значение + totalWidth +
+// MENU_BAR_WIDTH, должна остаться меньше 128
 #define MENU_BAR_Y 50 // Y верхнего края НЕвыбранных палочек
 #define MENU_BAR_SELECTED_Y_OFFSET 4 // На сколько вниз смещена палочка выбранного пункта
 
