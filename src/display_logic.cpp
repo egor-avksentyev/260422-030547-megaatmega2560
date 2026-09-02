@@ -391,9 +391,10 @@ void drawEqScreen(int eqIndex) {
   u8g2.setFont(EQ_LABEL_FONT);
   u8g2.clearBuffer();
 
-  // По центру экрана, а не выровнено по левому краю, как у Source/Dimmer — тут заголовок
-  // короткий ("EQ"), список ниже сам по себе достаточно широкий, чтобы не тесниться с ним
-  int labelX = (128 - u8g2.getStrWidth("EQ")) / 2;
+  // Справа, по вертикали по центру экрана, крупным шрифтом — в отличие от Source/Dimmer,
+  // где заголовок мелкий и сверху. Список ниже показывает только названия пресетов (без
+  // значений дБ), он узкий и не пересекается с заголовком у правого края
+  int labelX = 128 - u8g2.getStrWidth("EQ") - EQ_LABEL_RIGHT_MARGIN + EQ_LABEL_X_OFFSET;
   u8g2.setCursor(labelX, EQ_LABEL_Y);
   u8g2.print(menuItems[currentMenuItem]);
   drawTitleUnderline(labelX, EQ_LABEL_Y, "EQ", EQ_LABEL_UNDERLINE_Y_OFFSET);
@@ -411,9 +412,7 @@ void drawEqScreen(int eqIndex) {
       break;
     }
     int y = EQ_LIST_Y_START + row * EQ_LIST_LINE_HEIGHT;
-    char rowText[24];
-    snprintf(rowText, sizeof(rowText), "%-9s H%+d B%+d", eqPresets[i].name, eqPresets[i].highDb, eqPresets[i].bassDb);
-    drawHighlightedRow(EQ_LIST_X, y, rowText, i == eqIndex,
+    drawHighlightedRow(EQ_LIST_X, y, eqPresets[i].name, i == eqIndex,
       EQ_ROW_HIGHLIGHT_PAD_X, EQ_ROW_HIGHLIGHT_PAD_Y, EQ_ROW_HIGHLIGHT_RADIUS,
       EQ_ROW_DOT_RADIUS, EQ_ROW_DOT_X_OFFSET);
   }

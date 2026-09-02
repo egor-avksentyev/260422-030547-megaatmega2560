@@ -559,13 +559,19 @@ const EqPreset eqPresets[EQ_COUNT] = {
   {"Lounge",     1, -1},
 };
 
-#define EQ_LABEL_FONT u8g2_font_ncenB08_tr // Меньше, чем у Source/Dimmer — заголовок тут по центру, не занимает угол
-#define EQ_LABEL_Y 11
+// Заголовок "EQ" — справа, по вертикали по центру экрана, крупным шрифтом (в отличие от
+// Source/Dimmer, где заголовок мелкий и сверху). X считается динамически от ширины текста
+// (u8g2.getStrWidth()) в drawEqScreen() — EQ_LABEL_RIGHT_MARGIN только отступ от правого края
+#define EQ_LABEL_FONT u8g2_font_ncenB12_tr
+#define EQ_LABEL_Y 38 // Baseline по вертикали ближе к центру экрана (высота 64) для этого шрифта
+#define EQ_LABEL_RIGHT_MARGIN 4
+#define EQ_LABEL_X_OFFSET -10 // Доп. сдвиг по X (+ вправо, - влево) относительно правого края — подвинь это число
 #define EQ_LIST_FONT u8g2_font_ncenB08_tr
 #define EQ_LIST_X 4
-#define EQ_LIST_Y_START 25 // Y (baseline) первой видимой строки списка
+#define EQ_LIST_Y_START 14 // Y (baseline) первой видимой строки списка — выше, чем раньше: заголовок
+// больше не сверху, вся высота экрана теперь под список
 #define EQ_LIST_LINE_HEIGHT 12
-#define EQ_LIST_VISIBLE_ROWS 4 // Сколько строк видно за раз — EQ_COUNT=10 больше, список прокручивается вокруг выбранного пункта
+#define EQ_LIST_VISIBLE_ROWS 5 // Сколько строк видно за раз — EQ_COUNT=10 больше, список прокручивается вокруг выбранного пункта
 #define EQ_ROW_HIGHLIGHT_PAD_X 2
 #define EQ_ROW_HIGHLIGHT_PAD_Y 2
 #define EQ_ROW_HIGHLIGHT_RADIUS 3
