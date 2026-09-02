@@ -48,6 +48,14 @@ void updateVolumeRing(int percent) {
   // светодиод зажигался бы только при значении ровно 100%, а не при приближении к нему
   int litCount = (percent * 11 + 50) / 100;
   litCount = constrain(litCount, 0, 11);
+  // Гистерезис только на переходе 0<->1-й светодиод (см. VOLUME_RING_FIRST_LED_*_PERCENT) —
+  // самая шумная точка шкалы. На сам percent/raw не влияет, только на то, что рисуем
+  static bool firstLedLatched = false;
+  if (litCount <= 1) {
+    int threshold = firstLedLatched ? VOLUME_RING_FIRST_LED_EXIT_PERCENT : VOLUME_RING_FIRST_LED_ENTER_PERCENT;
+    litCount = (percent >= threshold) ? 1 : 0;
+    firstLedLatched = (litCount == 1);
+  }
   bool exceededMidPoint = percent > VOLUME_MID_PERCENT; // Строго выше — не на 50% и не ниже
   volumeRing.clear();
   for (int i = 0; i < litCount; i++) {

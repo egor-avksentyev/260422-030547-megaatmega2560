@@ -438,7 +438,7 @@ void loop() {
   // Bass/High пропускаются, пока играет разовая анимация переключения Bypass (см. блок ниже) —
   // она сама берёт на себя отображение этих двух колец, пока активна
   static unsigned long lastRingUpdate = 0;
-  if (!powerOff && millis() - lastRingUpdate >= 200) {
+  if (!powerOff && millis() - lastRingUpdate >= RING_UPDATE_INTERVAL_MS) {
     lastRingUpdate = millis();
     updateVolumeRing(readVolumePotPercent());
     if (bypassAnimMode == 0) {
