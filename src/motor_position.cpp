@@ -113,3 +113,20 @@ int bassZeroRaw() {
 int highZeroRaw() {
   return calRawForValue(0, highPotCalRaw, highPotCalValue, highPotCalPoints);
 }
+
+int valueToRaw(int targetValue, const int calRaw[], const int calValue[], int calPoints) {
+  if (targetValue <= calValue[0]) {
+    return calRaw[0];
+  }
+  if (targetValue >= calValue[calPoints - 1]) {
+    return calRaw[calPoints - 1];
+  }
+  for (int i = 0; i < calPoints - 1; i++) {
+    if (targetValue >= calValue[i] && targetValue <= calValue[i + 1]) {
+      long valueRange = calValue[i + 1] - calValue[i];
+      long rawRange = calRaw[i + 1] - calRaw[i];
+      return calRaw[i] + (targetValue - calValue[i]) * rawRange / valueRange;
+    }
+  }
+  return calRaw[0];
+}

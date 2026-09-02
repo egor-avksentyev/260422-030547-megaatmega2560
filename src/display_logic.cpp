@@ -10,6 +10,9 @@
 #include "animations/dimmer_animation.h"
 #include "animations/color_animation.h"
 #include "animations/source_animation.h"
+#include "animations/eq_animation.h"
+#include "animations/info_animation.h"
+#include "temperature_sensor.h"
 
 U8G2_SSD1309_128X64_NONAME2_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
 
@@ -98,6 +101,10 @@ void drawMenu() {
     drawColorAnim(MENU_ICON_X, MENU_ICON_Y);
   } else if (menuItems[currentMenuItem] == "Source") {
     drawSourceAnim(MENU_ICON_X, MENU_ICON_Y);
+  } else if (menuItems[currentMenuItem] == "EQ") {
+    drawEqAnim(EQ_ICON_X, EQ_ICON_Y);
+  } else if (menuItems[currentMenuItem] == "Info") {
+    drawInfoAnim(MENU_ICON_X, MENU_ICON_Y);
   }
 
   drawStatusIndicators();
@@ -375,6 +382,75 @@ void drawSourceScreen(int sourceIndex) {
     drawHighlightedRow(SOURCE_LIST_X, y, sourceNames[i], i == sourceIndex,
       SOURCE_ROW_HIGHLIGHT_PAD_X, SOURCE_ROW_HIGHLIGHT_PAD_Y, SOURCE_ROW_HIGHLIGHT_RADIUS,
       SOURCE_ROW_DOT_RADIUS, SOURCE_ROW_DOT_X_OFFSET);
+  }
+
+  drawStatusIndicators();
+
+  u8g2.sendBuffer();
+}
+
+void drawEqScreen(int eqIndex) {
+  waitForDisplayRedrawGap();
+
+  u8g2.setFont(EQ_LABEL_FONT);
+  u8g2.clearBuffer();
+
+  // Справа, по вертикали по центру экрана, крупным шрифтом — в отличие от Source/Dimmer,
+  // где заголовок мелкий и сверху. Список ниже показывает только названия пресетов (без
+  // значений дБ), он узкий и не пересекается с заголовком у правого края
+  int labelX = 128 - u8g2.getStrWidth("EQ") - EQ_LABEL_RIGHT_MARGIN + EQ_LABEL_X_OFFSET;
+  u8g2.setCursor(labelX, EQ_LABEL_Y);
+  u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(labelX, EQ_LABEL_Y, "EQ", EQ_LABEL_UNDERLINE_Y_OFFSET);
+
+  // EQ_COUNT пресетов не помещаются на экране все разом (EQ_LIST_VISIBLE_ROWS зараз,
+  // в отличие от Source, где SOURCE_COUNT подобран так, чтобы влезть целиком) — окно
+  // центрируется на выбранном пункте и не выходит за границы списка
+  int windowStart = eqIndex - (EQ_LIST_VISIBLE_ROWS - 1) / 2;
+  windowStart = constrain(windowStart, 0, max(0, EQ_COUNT - EQ_LIST_VISIBLE_ROWS));
+
+  u8g2.setFont(EQ_LIST_FONT);
+  for (int row = 0; row < EQ_LIST_VISIBLE_ROWS; row++) {
+    int i = windowStart + row;
+    if (i >= EQ_COUNT) {
+      break;
+    }
+    int y = EQ_LIST_Y_START + row * EQ_LIST_LINE_HEIGHT;
+    drawHighlightedRow(EQ_LIST_X, y, eqPresets[i].name, i == eqIndex,
+      EQ_ROW_HIGHLIGHT_PAD_X, EQ_ROW_HIGHLIGHT_PAD_Y, EQ_ROW_HIGHLIGHT_RADIUS,
+      EQ_ROW_DOT_RADIUS, EQ_ROW_DOT_X_OFFSET);
+  }
+
+  drawStatusIndicators();
+
+  u8g2.sendBuffer();
+}
+
+void drawInfoScreen() {
+  waitForDisplayRedrawGap();
+
+  u8g2.setFont(INFO_LABEL_FONT);
+  u8g2.clearBuffer();
+
+  u8g2.setCursor(INFO_LABEL_X, INFO_LABEL_Y);
+  u8g2.print(menuItems[currentMenuItem]);
+  drawTitleUnderline(INFO_LABEL_X, INFO_LABEL_Y, "Info", INFO_LABEL_UNDERLINE_Y_OFFSET);
+
+  float temps[3];
+  readAllTemperatures(temps);
+
+  u8g2.setFont(INFO_ROW_FONT);
+  for (int i = 0; i < 3; i++) {
+    int y = INFO_LIST_Y_START + i * INFO_LIST_LINE_HEIGHT;
+    u8g2.setCursor(INFO_ROW_X, y);
+    u8g2.print(tempSensorLabels[i]);
+    u8g2.print(": ");
+    if (temps[i] == TEMP_SENSOR_INVALID) {
+      u8g2.print("--");
+    } else {
+      u8g2.print(temps[i], 1);
+      u8g2.print("C");
+    }
   }
 
   drawStatusIndicators();

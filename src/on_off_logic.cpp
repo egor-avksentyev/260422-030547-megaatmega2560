@@ -154,6 +154,37 @@ static bool loadSavedVuMeterState() {
   return data.vuMeterOn != 0;
 }
 
+// --- Долговременная память выбранного EQ-пресета (EEPROM) ---
+// В отличие от Source/Bypass/VU Meter выше, тут два поля: индекс пресета и флаг "активен ли
+// он ещё". Если пользователь применил пресет, а потом вручную поправил Bass или High —
+// isEqSelectionActive() (motor_driver_logic.cpp) вернёт false, и eqActive пишется как 0:
+// при следующем включении приоритет получит сырое положение Bass/High (см.
+// saveBassHighPositionOnShutdown()/loadSavedBassHighPosition() выше), а не пресет, который
+// физически уже не описывает ручки. Сам индекс пишется всегда — чтобы курсор списка EQ на
+// экране остался там же, даже если пресет сейчас не "активен"
+struct SavedEqState {
+  uint16_t magic;
+  uint8_t eqIndex;
+  uint8_t eqActive;
+};
+#define SAVED_EQ_MAGIC 0xE9A0
+
+void saveEqStateOnShutdown() {
+  SavedEqState data = {SAVED_EQ_MAGIC, (uint8_t)settings[eqMenuIndex()], (uint8_t)(isEqSelectionActive() ? 1 : 0)};
+  EEPROM.put(EEPROM_EQ_STATE_ADDR, data);
+}
+
+static bool loadSavedEqState(int* eqIndexOut, bool* eqActiveOut) {
+  SavedEqState data;
+  EEPROM.get(EEPROM_EQ_STATE_ADDR, data);
+  if (data.magic != SAVED_EQ_MAGIC) {
+    return false;
+  }
+  *eqIndexOut = constrain(data.eqIndex, 0, EQ_COUNT - 1);
+  *eqActiveOut = data.eqActive != 0;
+  return true;
+}
+
 void powerOffScreen() {
   playBootAnimation();
 }
@@ -246,15 +277,29 @@ void powerOnDevices() {
     bypassAnimStart = millis();
   }
 
-  // Volume всегда стартует с фиксированного значения (независимо от Bypass/EEPROM);
-  // Bass/High восстанавливаются из EEPROM, только если там есть данные (т.е. Bypass был
-  // выключен на момент выключения) — оба идут в фоне через loop() (см. updateVolumeSeek()/
-  // updateBassHighRecenter()), а не блокируют старт
+  // Volume всегда стартует с фиксированного значения (независимо от Bypass/EEPROM)
   requestVolumeSeek(VOLUME_POWERON_TARGET_PERCENT);
-  int savedBassRaw, savedHighRaw;
-  if (loadSavedBassHighPosition(&savedBassRaw, &savedHighRaw)) {
-    requestBassSeek(savedBassRaw);
-    requestHighSeek(savedHighRaw);
+
+  // Bass/High восстанавливаются одним из двух способов, в зависимости от того, что было
+  // последним перед выключением — выбор EQ-пресета или ручная правка (см. saveEqStateOnShutdown()):
+  // если пресет ещё "активен" (isEqSelectionActive() было true на момент выключения) —
+  // приоритет у него, иначе — у сырого сохранённого положения потенциометров. Курсор списка
+  // EQ (settings[eqMenuIndex()]) восстанавливается в любом случае, даже если сам пресет
+  // сейчас не "активен" — просто без повторного применения к моторам
+  int savedEqIndex;
+  bool savedEqActive;
+  bool eqRestored = loadSavedEqState(&savedEqIndex, &savedEqActive);
+  if (eqRestored) {
+    settings[eqMenuIndex()] = savedEqIndex;
+  }
+  if (eqRestored && savedEqActive) {
+    applyEqPreset(savedEqIndex);
+  } else {
+    int savedBassRaw, savedHighRaw;
+    if (loadSavedBassHighPosition(&savedBassRaw, &savedHighRaw)) {
+      requestBassSeek(savedBassRaw);
+      requestHighSeek(savedHighRaw);
+    }
   }
 
   drawMenu(); // Отображаем меню после "POWER ON"

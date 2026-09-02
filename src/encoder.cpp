@@ -70,6 +70,10 @@ void checkEncoderButton() {
             drawColorScreen(settings[currentMenuItem]);
           } else if (menuItems[currentMenuItem] == "Source") {
             drawSourceScreen(settings[currentMenuItem]);
+          } else if (menuItems[currentMenuItem] == "EQ") {
+            drawEqScreen(settings[currentMenuItem]);
+          } else if (menuItems[currentMenuItem] == "Info") {
+            drawInfoScreen();
           } else {
             drawArrowIndicator(settings[currentMenuItem], false, false); // Переход на экран с кругом и стрелочкой для Bass, High, Volume
           }

@@ -53,6 +53,10 @@ static bool highSeeking = false;
 static int highSeekTargetRaw = 0;
 static bool volumeSeeking = false;
 static int volumeSeekTargetPercent = 0;
+// Отражает, соответствует ли текущее физическое положение Bass/High последнему применённому
+// EQ-пресету — сбрасывается в cancelBassRecenter()/cancelHighRecenter() (вызываются при ЛЮБОМ
+// ручном вмешательстве в Bass или High), устанавливается заново в applyEqPreset()
+static bool eqActive = false;
 
 // Допуск остановки мотора для КОНКРЕТНОЙ цели автовозврата: если цель — это ноль (или
 // достаточно близко к нему, чтобы экран всё равно показал бы 0dB/зелёный), используем ТОТ
@@ -87,10 +91,12 @@ void requestHighSeek(int targetRaw) {
 
 void cancelBassRecenter() {
   bassSeeking = false;
+  eqActive = false; // Ручное вмешательство в Bass — выбранный EQ-пресет больше не актуален
 }
 
 void cancelHighRecenter() {
   highSeeking = false;
+  eqActive = false; // Ручное вмешательство в High — выбранный EQ-пресет больше не актуален
 }
 
 void updateBassHighRecenter() {
@@ -148,6 +154,17 @@ void updateVolumeSeek() {
   }
 }
 
+void applyEqPreset(int index) {
+  index = constrain(index, 0, EQ_COUNT - 1);
+  requestBassSeek(valueToRaw(eqPresets[index].bassDb, bassPotCalRaw, bassPotCalValue, bassPotCalPoints));
+  requestHighSeek(valueToRaw(eqPresets[index].highDb, highPotCalRaw, highPotCalValue, highPotCalPoints));
+  eqActive = true;
+}
+
+bool isEqSelectionActive() {
+  return eqActive;
+}
+
 // Как и обычная перерисовка в main.cpp, уважает bypassAnimMode — если Bypass включён
 // (режим 2, центр держится красным всё время, пока Bypass включён), кольца Bass/High не
 // должны на секунду переключаться на обычный зелёный нулевой цвет только потому, что
@@ -183,6 +200,18 @@ void seekBassHighVolumeToZeroBlocking() {
     // в main.cpp, а ручки при этом реально едут в ноль
     renderShutdownRings();
     delay(5);
+  }
+  // Мёртвая зона низа шкалы Volume (см. VOLUME_ZERO_DEADZONE_PERCENT) — обычный seek по
+  // проценту не видит разницы внутри неё и мог остановиться, ещё не доехав до истинного
+  // физического нуля. Слепой доворот без сверки с потенциометром — единственный способ
+  // гарантированно дойти до упора, раз обратная связь тут ничего не показывает
+  if (readVolumePotPercent() <= VOLUME_ZERO_DEADZONE_PERCENT) {
+    motorControl2(-SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
+    unsigned long blindStart = millis();
+    while (millis() - blindStart < VOLUME_ZERO_BLIND_PUSH_MS) {
+      renderShutdownRings();
+      delay(5);
+    }
   }
   stopAllMotors(); // Предохранитель: гарантированно стоп, даже если что-то не успело доехать до таймаута
   renderShutdownRings(); // Финальный кадр — на случай если моторы остановились чуть раньше последней отрисовки выше

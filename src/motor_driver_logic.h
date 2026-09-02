@@ -30,6 +30,15 @@ void requestVolumeSeek(int targetPercent);
 void updateVolumeSeek();
 void cancelVolumeSeek();
 
+// Применяет EQ-пресет (см. eqPresets[]/EQ_COUNT в hardware_settings.h) — переводит его
+// значения дБ в raw-цели (valueToRaw(), motor_position.cpp) и запускает обычный seek для
+// Bass/High. eqSelectionActive() отражает, соответствует ли текущее физическое положение
+// Bass/High последнему применённому пресету — cancelBassRecenter()/cancelHighRecenter()
+// сбрасывают этот флаг, как только пользователь вручную поправит Bass или High после
+// выбора пресета (см. приоритет сохранения в on_off_logic.cpp, saveEqStateOnShutdown())
+void applyEqPreset(int index);
+bool isEqSelectionActive();
+
 // Блокирующий вариант для всех трёх — используется только при выключении питания: моторы
 // должны физически доехать до нуля ДО того, как реле обесточат систему, а не когда-нибудь
 // потом в фоне через loop() (см. remote_control.cpp, case IR_POWER)
