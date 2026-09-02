@@ -191,6 +191,8 @@ void handleRemoteInput() {
               drawSourceScreen(settings[currentMenuItem]);
             } else if (menuItems[currentMenuItem] == "EQ") {
               drawEqScreen(settings[currentMenuItem]);
+            } else if (menuItems[currentMenuItem] == "Info") {
+              drawInfoScreen();
             } else {
               drawArrowIndicator(settings[currentMenuItem], false, false);
             }
@@ -253,6 +255,8 @@ void handleRemoteInput() {
               drawSourceScreen(settings[currentMenuItem]);
             } else if (menuItems[currentMenuItem] == "EQ") {
               drawEqScreen(settings[currentMenuItem]);
+            } else if (menuItems[currentMenuItem] == "Info") {
+              drawInfoScreen();
             } else {
               drawArrowIndicator(settings[currentMenuItem], false, false);
             }

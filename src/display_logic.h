@@ -23,6 +23,7 @@ void drawDimmerScreen();
 void drawColorScreen(int colorIndex);
 void drawSourceScreen(int sourceIndex);
 void drawEqScreen(int eqIndex);
+void drawInfoScreen();
 void displayMessage(const char* message);
 // Применяет displayBrightness (main.h, пункт "Dimmer", вторая строка) как реальный
 // контраст OLED-дисплея (0-100% -> u8g2.setContrast(0-255))

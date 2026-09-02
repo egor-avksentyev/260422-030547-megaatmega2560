@@ -25,10 +25,12 @@
 #include "animations/color_animation.h"
 #include "animations/source_animation.h"
 #include "animations/eq_animation.h"
+#include "animations/info_animation.h"
+#include "temperature_sensor.h"
 
-String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source", "EQ"};
+String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source", "EQ", "Info"};
 int currentMenuItem = 0;
-int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT, 0, 0}; // VU Meter "включено", Bypass "выключено", Dimmer/Color колец, Source/EQ по умолчанию (EQ = Flat, индекс 0)
+int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT, 0, 0, 0}; // VU Meter "включено", Bypass "выключено", Dimmer/Color колец, Source/EQ по умолчанию (EQ = Flat, индекс 0), Info не используется (нет редактируемого значения)
 bool inSettingsMode = false;
 bool isMuted = false; // Флаг для состояния Mute
 unsigned long lastMotorInputTime = 0; // Момент последней команды на мотор Bass/High/Volume (для авто-стопа)
@@ -110,6 +112,8 @@ void redrawCurrentScreen() {
     drawSourceScreen(settings[currentMenuItem]);
   } else if (menuItems[currentMenuItem] == "EQ") {
     drawEqScreen(settings[currentMenuItem]);
+  } else if (menuItems[currentMenuItem] == "Info") {
+    drawInfoScreen();
   } else {
     drawArrowIndicator(settings[currentMenuItem], false, false);
   }
@@ -251,6 +255,7 @@ void setup() {
   pinMode(BYPASS_LED_PIN, OUTPUT);
 
   initRemoteControl();
+  initTemperatureSensors(); // Датчики DS18B20, пункт меню "Info"
   attachInterrupt(digitalPinToInterrupt(ENCODER_A_PIN), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCODER_B_PIN), encoderISR, CHANGE);
 
@@ -387,6 +392,10 @@ void loop() {
           encoderValue = 0;
           applyEqPreset(settings[currentMenuItem]);
           drawEqScreen(settings[currentMenuItem]);
+        } else if (menuItems[currentMenuItem] == "Info") {
+          // Нет редактируемого значения — просто гасим накопленное вращение, иначе
+          // encoderValue никогда не обнулится и утащит "хвост" в следующий пункт меню
+          encoderValue = 0;
         }
       }
     }
@@ -426,6 +435,8 @@ void loop() {
       animateSourceIconPartial(MENU_ICON_X, MENU_ICON_Y);
     } else if (menuItems[currentMenuItem] == "EQ") {
       animateEqIconPartial(EQ_ICON_X, EQ_ICON_Y);
+    } else if (menuItems[currentMenuItem] == "Info") {
+      animateInfoIconPartial(MENU_ICON_X, MENU_ICON_Y);
     }
   }
 
@@ -522,5 +533,15 @@ void loop() {
     lastPotUpdate = millis();
     drawArrowIndicator(0, false, false);
     handleRemoteInput(); // См. комментарий у блока обновления колец выше
+  }
+
+  // Живое обновление температур на экране Info, пока он открыт — readAllTemperatures()
+  // не блокирует (см. temperature_sensor.cpp), поэтому handleRemoteInput() здесь не
+  // обязателен так же, как у блоков выше, но не помешает
+  static unsigned long lastInfoUpdate = 0;
+  if (!isMuted && inSettingsMode && menuItems[currentMenuItem] == "Info" &&
+      millis() - lastInfoUpdate >= INFO_UPDATE_INTERVAL_MS) {
+    lastInfoUpdate = millis();
+    drawInfoScreen();
   }
 }

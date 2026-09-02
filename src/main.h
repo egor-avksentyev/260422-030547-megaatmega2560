@@ -59,7 +59,7 @@ int sourceMenuIndex();
 int vuMeterMenuIndex();
 int eqMenuIndex();
 
-#define MENU_ITEM_COUNT 9
+#define MENU_ITEM_COUNT 10
 
 void resetCursor();
 void saveSettings();
