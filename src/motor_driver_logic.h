@@ -21,6 +21,11 @@ void requestHighSeek(int targetRaw);
 void updateBassHighRecenter();
 void cancelBassRecenter();
 void cancelHighRecenter();
+// Идёт ли сейчас фоновый автовозврат к цели — см. подробный комментарий у реализации
+// (motor_driver_logic.cpp). Нужны снаружи, чтобы не путать программное движение мотора
+// с физическим вращением ручки рукой (main.cpp)
+bool isBassSeeking();
+bool isHighSeeking();
 
 // Тот же принцип для Volume, но по % (не raw) и с произвольной целью — используется, чтобы
 // при включении питания громкость сама доехала до VOLUME_POWERON_TARGET_PERCENT, и при
@@ -29,6 +34,7 @@ void cancelHighRecenter();
 void requestVolumeSeek(int targetPercent);
 void updateVolumeSeek();
 void cancelVolumeSeek();
+bool isVolumeSeeking();
 
 // Применяет EQ-пресет (см. eqPresets[]/EQ_COUNT в hardware_settings.h) — переводит его
 // значения дБ в raw-цели (valueToRaw(), motor_position.cpp) и запускает обычный seek для

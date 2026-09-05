@@ -54,6 +54,32 @@
 #define MENU_ICON_X 0 // Кадр 32x32, крайняя левая часть экрана 128x64
 #define MENU_ICON_Y 10 // По центру вертикали ((64-32)/2)
 #define MENU_ICON_FRAME_DELAY_MS 42 // Задержка между кадрами внутри анимации
+
+// --- Оверлей положения ручки (Bass/High/Volume) при обнаружении ручного вращения РУКОЙ,
+// пока сидим на карусели меню — см. drawKnobPositionOverlay() (display_logic.cpp/.h) и
+// блок обнаружения в main.cpp, loop(). Специально занимает ТУ ЖЕ область 32x32, что и
+// MENU_ICON_X/Y выше, и НЕ трогает NeoPixel вообще (только OLED) — в отличие от
+// полноэкранного варианта (drawArrowIndicator()), который через renderDbRing()/
+// updateVolumeRing() дёргает NeoPixel.show() и потому не может быть надёжно защищён от
+// коллизии с приёмом ИК (движение рукой никак не коррелирует с тем, когда придёт кадр
+// пульта — в отличие от команд навигации, см. MENU_NAVIGATION_RING_PAUSE_MS выше) ---
+#define KNOB_POSITION_OVERLAY_WIDTH 32
+#define KNOB_POSITION_OVERLAY_HEIGHT 32
+#define KNOB_POSITION_OVERLAY_FONT u8g2_font_ncenB08_tr
+#define KNOB_POSITION_OVERLAY_PAD_X 2
+#define KNOB_POSITION_OVERLAY_LABEL_Y_OFFSET 12 // Baseline первой строки (название ручки) от верха области
+#define KNOB_POSITION_OVERLAY_VALUE_Y_OFFSET 26 // Baseline второй строки (значение) от верха области
+
+// Обнаружение ручного вращения — сравнение с СОСЕДНИМ предыдущим замером (скользящее окно,
+// не с зафиксированной точкой — иначе после реального перемещения ручки в новое положение
+// сравнение никогда не осядет обратно, и индикатор завис бы навсегда — на эти грабли уже
+// наступали). Один тик отклонения выше порога — это может быть шум/наводка от соседнего
+// мотора (Bass/High/Volume делят Timer3, см. комментарий в motor_driver_logic.cpp), поэтому
+// нужно KNOB_OVERLAY_CONSECUTIVE_TICKS тиков подряд
+#define KNOB_OVERLAY_RAW_THRESHOLD 8
+#define KNOB_OVERLAY_CONSECUTIVE_TICKS 3
+// Через сколько мс без нового движения руки возвращаемся в карусель
+#define KNOB_OVERLAY_IDLE_TIMEOUT_MS 1000
 //
 // Позиция иконки EQ — отдельная от общих MENU_ICON_X/Y выше (см. drawEqAnim()/
 // animateEqIconPartial() в eq_animation.cpp и их вызовы в display_logic.cpp/main.cpp).

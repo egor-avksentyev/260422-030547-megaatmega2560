@@ -38,3 +38,12 @@ unsigned long lastMenuDrawTime();
 // чтобы drawMenu() знал о ней и не стартовал полную перерисовку прямо во время её хвоста
 // (короткий зазор DISPLAY_PARTIAL_REDRAW_MIN_GAP_MS, не полный DISPLAY_REDRAW_MIN_GAP_MS)
 void markPartialDisplayTransfer();
+
+// Компактный оверлей положения ручки (label — "Bass"/"High"/"Vol", value+unit — "-3"+"dB"
+// и т.п.) — рисуется ЧАСТИЧНО (updateDisplayArea(), не весь буфер, и НЕ трогает NeoPixel
+// вообще — только OLED), поверх ТОЙ ЖЕ области, что обычно занимает крутящаяся иконка
+// карусели (MENU_ICON_X/Y). Используется main.cpp, пока пользователь крутит Bass/High/Volume
+// РУКОЙ, сидя на карусели меню. Область самовосстанавливается: как только main.cpp
+// перестаёт вызывать эту функцию (истёк idle-таймаут), обычная иконка карусели
+// (animate*IconPartial()) сама перерисует эту же область на следующем плановом тике
+void drawKnobPositionOverlay(const char* label, int value, const char* unit);

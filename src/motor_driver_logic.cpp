@@ -134,6 +134,21 @@ void requestHighSeek(int targetRaw) {
   highSeeking = abs(raw - targetRaw) > recenterEpsilonFor(targetRaw, highZeroRaw(), HIGH_POT_ZERO_SNAP_RAW);
 }
 
+// Нужны, чтобы отличить физическое движение ручки РУКОЙ (см. main.cpp, knobIndicatorActiveItem)
+// от движения, которое сейчас двигает сам автовозврат/EQ-seek — иначе фоновый seek после
+// Bypass/питания/EQ-пресета ошибочно принимался бы за ручное вращение
+bool isBassSeeking() {
+  return bassSeeking;
+}
+
+bool isHighSeeking() {
+  return highSeeking;
+}
+
+bool isVolumeSeeking() {
+  return volumeSeeking;
+}
+
 void cancelBassRecenter() {
   bassSeeking = false;
   eqActive = false; // Ручное вмешательство в Bass — выбранный EQ-пресет больше не актуален
