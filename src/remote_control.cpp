@@ -16,6 +16,12 @@ void initRemoteControl() {
   IrReceiver.begin(IR_PIN, ENABLE_LED_FEEDBACK);
 }
 
+static unsigned long lastMenuNavigationTimeValue = 0;
+
+unsigned long lastMenuNavigationTime() {
+  return lastMenuNavigationTimeValue;
+}
+
 // Перерисовка drawArrowIndicator() (кружок+стрелка+кольцо) на КАЖДЫЙ repeat-кадр Up/Down
 // (~раз в 114мс, пока держишь кнопку) была лишней — тот же экран и так обновляется отдельным
 // таймером в loop() (main.cpp, "живое обновление положения ручки", каждые 200мс). Хуже того:
@@ -91,6 +97,7 @@ void handleRemoteInput() {
           break;
         }
         lastRightActionTime = millis();
+        lastMenuNavigationTimeValue = millis();
         Serial.println("Right button pressed"); // Отладочный вывод
         if (!inSettingsMode) {
           currentMenuItem = (currentMenuItem + 1) % MENU_ITEM_COUNT;
@@ -132,6 +139,7 @@ void handleRemoteInput() {
           break;
         }
         lastLeftActionTime = millis();
+        lastMenuNavigationTimeValue = millis();
         Serial.println("Left button pressed"); // Отладочный вывод
         if (!inSettingsMode) {
           currentMenuItem = (currentMenuItem - 1 + MENU_ITEM_COUNT) % MENU_ITEM_COUNT;
@@ -176,6 +184,7 @@ void handleRemoteInput() {
         static unsigned long lastEnterActionTime = 0;
         if (millis() - lastEnterActionTime > 200) {
           lastEnterActionTime = millis();
+          lastMenuNavigationTimeValue = millis();
           Serial.println("Enter button pressed"); // Отладочный вывод
           if (!inSettingsMode) {
             inSettingsMode = true;
@@ -363,6 +372,7 @@ void handleRemoteInput() {
         static unsigned long lastSetActionTime = 0;
         if (millis() - lastSetActionTime > 200) {
           lastSetActionTime = millis();
+          lastMenuNavigationTimeValue = millis();
           Serial.println("Set button pressed"); // Отладочный вывод
           beginSourceOverlay(); // Запоминает, куда вернуться, ДО того как currentMenuItem поменяется
           for (int i = 0; i < MENU_ITEM_COUNT; i++) {

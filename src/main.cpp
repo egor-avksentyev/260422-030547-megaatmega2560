@@ -449,7 +449,12 @@ void loop() {
   // Bass/High пропускаются, пока играет разовая анимация переключения Bypass (см. блок ниже) —
   // она сама берёт на себя отображение этих двух колец, пока активна
   static unsigned long lastRingUpdate = 0;
-  if (!powerOff && millis() - lastRingUpdate >= RING_UPDATE_INTERVAL_MS) {
+  // Придерживаем обновление колец на MENU_NAVIGATION_RING_PAUSE_MS после команды НАВИГАЦИИ
+  // по меню (Right/Left/Enter/Set) — см. подробный комментарий у MENU_NAVIGATION_RING_PAUSE_MS
+  // (hardware_settings.h). НЕ применяется к Up/Down (та команда не трогает
+  // lastMenuNavigationTime() вообще) — там кольца обязаны жить в реальном времени
+  bool recentMenuNavigation = millis() - lastMenuNavigationTime() < MENU_NAVIGATION_RING_PAUSE_MS;
+  if (!powerOff && !recentMenuNavigation && millis() - lastRingUpdate >= RING_UPDATE_INTERVAL_MS) {
     lastRingUpdate = millis();
     updateVolumeRing(readVolumePotPercent());
     if (bypassAnimMode == 0) {

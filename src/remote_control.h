@@ -11,3 +11,12 @@
 
 void initRemoteControl();
 void handleRemoteInput();
+
+// Момент (millis()) последней команды НАВИГАЦИИ по меню (Right/Left/Enter/Set) — НЕ
+// Up/Down (те двигают мотор, кольца должны жить в реальном времени, пока их держишь).
+// Используется main.cpp, чтобы на короткое окно после такой команды придержать
+// обновление NeoPixel-колец — NeoPixel.show() отключает прерывания на время бит-банга
+// (см. подробный комментарий у throttledSliderRedraw() в remote_control.cpp — та же
+// причина уже решалась для Up/Down, тут решаем для Right/Left/Enter/Set), и если это
+// окно накладывается на приём очередного RC5-кадра, кадр пульта теряется
+unsigned long lastMenuNavigationTime();
