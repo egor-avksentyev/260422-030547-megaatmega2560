@@ -199,11 +199,24 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
       renderDbRing(highRing, potValue, highRingState);
     }
   }
-  // Без смещения: на центральном значении (0dB для Bass/High, 50% для Volume) map() даёт
-  // ровно 0°, и стрелка (см. arrowX/arrowY ниже) смотрит точно вверх — перпендикулярно
-  // горизонту. Раньше был "+10" сдвиг, из-за которого стрелка была не строго вертикальна
-  // именно в центральной точке
-  int angleValue = map(potValue, valueMin, valueMax, -120, 120);
+  // Кусочно-линейно, не одним map(): от центра (0dB/50%) до половины пути к краю угол
+  // растёт до ARROW_NEEDLE_HORIZONTAL_ANGLE_DEG (строго горизонтально на ±5дБ у Bass/High
+  // и на 25%/75% у Volume), а от половины пути до самого края — до ARROW_NEEDLE_MAX_ANGLE_DEG.
+  // На центральном значении угол ровно 0°, и стрелка (см. arrowX/arrowY ниже) смотрит точно
+  // вверх — перпендикулярно горизонту
+  float halfRange = (valueMax - valueMin) / 2.0;
+  float center = (valueMin + valueMax) / 2.0;
+  float fraction = (halfRange != 0) ? (potValue - center) / halfRange : 0; // -1..1
+  float absFraction = fabs(fraction);
+  float sign = (fraction < 0) ? -1.0 : 1.0;
+  float angleDeg;
+  if (absFraction <= 0.5) {
+    angleDeg = fraction * (ARROW_NEEDLE_HORIZONTAL_ANGLE_DEG * 2.0);
+  } else {
+    angleDeg = sign * (ARROW_NEEDLE_HORIZONTAL_ANGLE_DEG
+        + (ARROW_NEEDLE_MAX_ANGLE_DEG - ARROW_NEEDLE_HORIZONTAL_ANGLE_DEG) * (absFraction - 0.5) * 2.0);
+  }
+  int angleValue = (int)(angleDeg + (angleDeg >= 0 ? 0.5 : -0.5)); // Округление к ближайшему
 
   Serial.print(menuItems[currentMenuItem]);
   Serial.print(" pot raw: ");
