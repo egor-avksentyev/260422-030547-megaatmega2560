@@ -1,6 +1,7 @@
 #include "motor_position.h"
 #include "hardware_settings.h"
 #include "main.h"
+#include "motor_driver_logic.h"
 
 int potRawToPercent(int raw, const int calRaw[], const int calPercent[], int calPoints, int zeroSnapRaw, int minSnapRaw, int maxSnapRaw) {
   if (zeroSnapRaw > 0) {
@@ -39,6 +40,32 @@ int readPotPercent(int pin, const int calRaw[], const int calPercent[], int calP
   return potRawToPercent(potRaw, calRaw, calPercent, calPoints, zeroSnapRaw, minSnapRaw, maxSnapRaw);
 }
 
+// Пресеты EQ (см. eqPresets[]/EQ_COUNT, hardware_settings.h) с малым, но ненулевым дБ
+// (Hip-Hop High=+1, Lounge High=-1) физически укладываются в *_POT_ZERO_SNAP_RAW вокруг
+// истинного нуля — обычный снап-к-нулю ниже (нужен, чтобы погасить дребезг при РУЧНОМ
+// вращении рядом с нулём) в этом случае маскирует осознанно ненулевой пресет зелёным
+// 0dB. isEqSelectionActive() сам по себе тут недостаточен: он остаётся true и после
+// того, как пользователь САМ докрутил ручку до настоящего нуля руками (без энкодера/
+// пульта — cancelBassRecenter()/cancelHighRecenter() тогда не вызываются вообще, флаг
+// повиснет true до следующего программного вмешательства) — поэтому дополнительно
+// сравниваем raw с raw-целью пресета И с raw истинного нуля: показываем значение
+// пресета, только если текущее положение физически ближе к цели пресета, чем к нулю —
+// иначе показываем настоящий 0, даже если пресет формально ещё "активен"
+static int eqPresetOverride(int fallbackPercent, int rawValue, int zeroRaw, const int calRaw[], const int calValue[], int calPoints, int8_t EqPreset::*field) {
+  if (fallbackPercent != 0 || !isEqSelectionActive()) {
+    return fallbackPercent;
+  }
+  int presetDb = eqPresets[settings[eqMenuIndex()]].*field;
+  if (presetDb == 0) {
+    return fallbackPercent;
+  }
+  int presetTargetRaw = valueToRaw(presetDb, calRaw, calValue, calPoints);
+  if (abs(rawValue - presetTargetRaw) < abs(rawValue - zeroRaw)) {
+    return presetDb;
+  }
+  return fallbackPercent;
+}
+
 int readBassPotPercent(int* rawOut) {
   // Гистерезис вокруг 0dB (см. BASS_POT_ZERO_EXIT_SNAP_RAW) — только для возвращаемого
   // (отображаемого) значения; rawOut отдаёт настоящее сырое значение без изменений,
@@ -46,17 +73,25 @@ int readBassPotPercent(int* rawOut) {
   // гистерезис дисплея не нужен и мог бы помешать
   static bool wasAtZero = false;
   int zeroSnap = wasAtZero ? BASS_POT_ZERO_EXIT_SNAP_RAW : BASS_POT_ZERO_SNAP_RAW;
-  int percent = readPotPercent(BASS_POT_PIN, bassPotCalRaw, bassPotCalValue, bassPotCalPoints, rawOut, zeroSnap, BASS_POT_MIN_SNAP_RAW, BASS_POT_MAX_SNAP_RAW);
+  int raw;
+  int percent = readPotPercent(BASS_POT_PIN, bassPotCalRaw, bassPotCalValue, bassPotCalPoints, &raw, zeroSnap, BASS_POT_MIN_SNAP_RAW, BASS_POT_MAX_SNAP_RAW);
   wasAtZero = (percent == 0);
-  return percent;
+  if (rawOut != nullptr) {
+    *rawOut = raw;
+  }
+  return eqPresetOverride(percent, raw, bassZeroRaw(), bassPotCalRaw, bassPotCalValue, bassPotCalPoints, &EqPreset::bassDb);
 }
 
 int readHighPotPercent(int* rawOut) {
   static bool wasAtZero = false;
   int zeroSnap = wasAtZero ? HIGH_POT_ZERO_EXIT_SNAP_RAW : HIGH_POT_ZERO_SNAP_RAW;
-  int percent = readPotPercent(HIGH_POT_PIN, highPotCalRaw, highPotCalValue, highPotCalPoints, rawOut, zeroSnap, HIGH_POT_MIN_SNAP_RAW, HIGH_POT_MAX_SNAP_RAW);
+  int raw;
+  int percent = readPotPercent(HIGH_POT_PIN, highPotCalRaw, highPotCalValue, highPotCalPoints, &raw, zeroSnap, HIGH_POT_MIN_SNAP_RAW, HIGH_POT_MAX_SNAP_RAW);
   wasAtZero = (percent == 0);
-  return percent;
+  if (rawOut != nullptr) {
+    *rawOut = raw;
+  }
+  return eqPresetOverride(percent, raw, highZeroRaw(), highPotCalRaw, highPotCalValue, highPotCalPoints, &EqPreset::highDb);
 }
 
 int readVolumePotPercent(int* rawOut) {
