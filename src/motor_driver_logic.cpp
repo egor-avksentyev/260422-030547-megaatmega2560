@@ -5,8 +5,40 @@
 #include "neopixel.h"
 #include "animation_logic.h"
 
+// Смотри MOTOR_REVERSE_BRAKE_MS (hardware_settings.h) за причиной паузы при развороте.
+// motorControl() обслуживает два разных мотора (Bass/High) через один и тот же код — по
+// одной ячейке "последнее направление" на каждый физический pinPWM (естественный ключ,
+// уникальный для каждого мотора), с линейным поиском по маленькому статическому массиву
+static void bracePwmReversal(byte pinIN, byte pinPWM, int newSign) {
+  static byte trackedPin[2] = {0, 0};
+  static int trackedSign[2] = {0, 0};
+  static byte trackedCount = 0;
+
+  int slot = -1;
+  for (byte i = 0; i < trackedCount; i++) {
+    if (trackedPin[i] == pinPWM) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0 && trackedCount < 2) {
+    slot = trackedCount++;
+    trackedPin[slot] = pinPWM;
+    trackedSign[slot] = 0;
+  }
+  if (slot >= 0) {
+    if (trackedSign[slot] != 0 && newSign != 0 && trackedSign[slot] != newSign) {
+      digitalWrite(pinIN, LOW);
+      digitalWrite(pinPWM, LOW);
+      delay(MOTOR_REVERSE_BRAKE_MS);
+    }
+    trackedSign[slot] = newSign;
+  }
+}
+
 void motorControl(int val, byte pinIN, byte pinPWM) {
   val = map(val, -50, 50, -255, 255);
+  bracePwmReversal(pinIN, pinPWM, val > 0 ? 1 : (val < 0 ? -1 : 0));
 
   if (val > 0) {  // Вперёд
     analogWrite(pinPWM, val);
@@ -22,6 +54,19 @@ void motorControl(int val, byte pinIN, byte pinPWM) {
 
 void motorControl2(int val, byte pinIN1, byte pinIN2, byte pinPWM1, byte pinPWM2) {
   val = map(val, -50, 50, -255, 255);
+
+  // Только Volume использует этот интерфейс (единственный вызов на паре pinPWM1/pinPWM2) —
+  // одной статической переменной достаточно, в отличие от motorControl() выше
+  static int lastSign = 0;
+  int newSign = val > 0 ? 1 : (val < 0 ? -1 : 0);
+  if (lastSign != 0 && newSign != 0 && lastSign != newSign) {
+    analogWrite(pinPWM1, 0);
+    analogWrite(pinPWM2, 0);
+    digitalWrite(pinIN1, LOW);
+    digitalWrite(pinIN2, LOW);
+    delay(MOTOR_REVERSE_BRAKE_MS);
+  }
+  lastSign = newSign;
 
   if (val > 0) {  // Вперёд
     analogWrite(pinPWM1, val);
