@@ -13,6 +13,7 @@
 #include "animations/eq_animation.h"
 #include "animations/info_animation.h"
 #include "temperature_sensor.h"
+#include "voltage_sensor.h"
 
 U8G2_SSD1309_128X64_NONAME2_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
 
@@ -452,6 +453,24 @@ void drawInfoScreen() {
       u8g2.print("C");
     }
   }
+
+  int voltageRaw;
+  int voltage = readMainsVoltage(&voltageRaw);
+  // Для калибровки/подстройки подстроечника на модуле — крути его и подай известное
+  // напряжение (мультиметром на розетке), смотри raw в Serial Monitor, потом подставь
+  // пару (raw, вольты) в mainsVoltageCalRaw[]/mainsVoltageCalValue[] (hardware_settings.h)
+  Serial.print("Voltage sensor raw: ");
+  Serial.print(voltageRaw);
+  Serial.print(" -> ");
+  Serial.print(voltage);
+  Serial.println("V");
+
+  u8g2.setFont(INFO_VOLTAGE_FONT);
+  u8g2.setCursor(INFO_VOLTAGE_X, INFO_VOLTAGE_Y);
+  u8g2.print(INFO_VOLTAGE_LABEL);
+  u8g2.print(":");
+  u8g2.print(voltage);
+  u8g2.print("V");
 
   drawStatusIndicators();
 

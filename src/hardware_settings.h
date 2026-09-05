@@ -210,14 +210,47 @@ const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT", "STREAMER"};
 // физически измеряет каждый датчик (радиатор, трансформатор, воздух в корпусе и т.п.)
 const char* const tempSensorLabels[3] = {"bulb1", "bulb2", "bulb3"};
 
+// --- Датчик напряжения сети — модуль ZMPT101B+LM358, пункт меню "Info" (см.
+// voltage_sensor.h/.cpp). Модуль НЕ выпрямляет AC — отдаёт саму синусоиду, смещённую на
+// середину шкалы ADC (bias), с амплитудой, пропорциональной напряжению сети. Поэтому
+// readMainsVoltage() не усредняет отсчёты (усреднение по периоду сходится к bias и теряет
+// амплитуду — см. подробный комментарий там), а ловит размах (max-min) за окно сэмплов,
+// и уже размах линейно интерполируется по калибровочной таблице (см. potRawToPercent()
+// в motor_position.cpp, переиспользуется как есть — она не привязана конкретно к
+// потенциометрам) ---
+#define VOLTAGE_SENSOR_PIN A0
+// analogRead() на AVR занимает ~100мкс — 400 сэмплов это ~40мс, с запасом перекрывает
+// несколько периодов сети (20мс период на 50Гц). Дороже, чем 64 сэмпла у потенциометров
+// (see readMainsVoltage() в voltage_sensor.cpp), но это ничем не мешает — читается редко,
+// раз в INFO_UPDATE_INTERVAL_MS, не в общем 100мс-цикле колец
+#define VOLTAGE_SENSOR_SAMPLES 400
+// Калибровка размаха (max-min) снята на реальном железе: 0В сети -> raw 30-33 (шум ADC,
+// не ровный 0 — это ожидаемо), 228В сети -> raw 209-214. Взяты середины замеренных
+// диапазонов. Только две точки — при желании расширить диапазон/точность добавь
+// промежуточные замеры (например 110В) по тому же образцу, как у калибровки потенциометров
+const int mainsVoltageCalRaw[] = {31, 211};
+const int mainsVoltageCalValue[] = {0, 228};
+const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVoltageCalRaw[0]);
+
 #define INFO_LABEL_FONT u8g2_font_ncenB12_tr // Тот же стиль заголовка, что у Dimmer — сверху слева
 #define INFO_LABEL_X 25
 #define INFO_LABEL_Y 15
 #define INFO_LABEL_UNDERLINE_Y_OFFSET 3
+// Три строки температур — шрифт/позиция/шаг общие на все три (см. drawInfoScreen()
+// в display_logic.cpp: цикл i=0..2, Y = INFO_LIST_Y_START + i * INFO_LIST_LINE_HEIGHT)
 #define INFO_ROW_FONT u8g2_font_ncenB08_tr
 #define INFO_ROW_X 10
 #define INFO_LIST_Y_START 38 // Y (baseline) первой строки — ниже заголовка, чтобы не пересекались
 #define INFO_LIST_LINE_HEIGHT 12 // При 3 строках последняя на 62 — укладывается в экран высотой 64
+// Напряжение сети — отдельная строка со своим шрифтом/позицией, независимо от температур
+// выше (не участвует в цикле/шаге INFO_LIST_*, можно двигать и менять шрифт отдельно).
+// По умолчанию — справа от заголовка "Info" на той же высоте (там ещё есть место по
+// ширине), а не 4-й строкой снизу — три температуры и так занимают весь список до низа
+// экрана (38/50/62 при текущих INFO_LIST_*, см. выше)
+#define INFO_VOLTAGE_FONT u8g2_font_ncenB08_tr
+#define INFO_VOLTAGE_X 75
+#define INFO_VOLTAGE_Y 15
+#define INFO_VOLTAGE_LABEL "AC" // Подпись перед значением — поправь под то, что удобнее читать
 
 // ============================================================================
 // NeoPixel-кольца вокруг ручек Bass/High/Volume
