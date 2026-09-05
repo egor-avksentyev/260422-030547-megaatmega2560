@@ -472,7 +472,10 @@ void loop() {
   // и без перечтения потенциометра (дёшево: просто пересчёт яркости уже известного
   // значения + show())
   static unsigned long lastBlinkRender = 0;
-  if (!powerOff && millis() - lastBlinkRender >= 30) {
+  // Тот же MENU_NAVIGATION_RING_PAUSE_MS, что и у основного блока колец выше — эта анимация
+  // тоже дёргает NeoPixel.show() (renderDbRing()/renderVolumeRingBreath()), просто чаще (раз
+  // в 30мс, а не 100мс), и раньше её этим не защищали
+  if (!powerOff && !recentMenuNavigation && millis() - lastBlinkRender >= 30) {
     if (bypassAnimMode == 0) {
       if (dbRingBlinking(bassRingState)) {
         renderDbRing(bassRing, bassRingState.lastValue, bassRingState);
@@ -493,7 +496,9 @@ void loop() {
   // Режим 2 (мигание красным, Bypass включён) — держится ВСЁ время, пока Bypass включён,
   // и сам не заканчивается: заканчивает его только повторный triggerBypassAnim() при
   // выключении Bypass (переводит в режим 1)
-  if (!powerOff && bypassAnimMode != 0) {
+  // Тот же MENU_NAVIGATION_RING_PAUSE_MS — эта анимация тоже дёргает NeoPixel.show()
+  // (renderDbRing()/renderBypassFillAnim()/renderBypassBlinkAnim())
+  if (!powerOff && !recentMenuNavigation && bypassAnimMode != 0) {
     unsigned long elapsed = millis() - bypassAnimStart;
     if (bypassAnimMode == 1 && elapsed >= BYPASS_FILL_TOTAL_MS) {
       bypassAnimMode = 0;
