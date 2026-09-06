@@ -262,7 +262,7 @@ void setup() {
   pinMode(BYPASS_BUTTON_PIN, INPUT_PULLUP);
   pinMode(BYPASS_LED_PIN, OUTPUT);
 
-  initRemoteControl();
+  initRemoteControl(); // Теперь на Input Capture Timer4 (пин 49) — см. rc5_icu.h/remote_control.cpp
   initTemperatureSensors(); // Датчики DS18B20, пункт меню "Info"
   attachInterrupt(digitalPinToInterrupt(ENCODER_A_PIN), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCODER_B_PIN), encoderISR, CHANGE);
@@ -279,7 +279,7 @@ void setup() {
 }
 
 void loop() {
-  handleRemoteInput(); // Проверяет сигнал с ИК-пульта сама (IrReceiver.decode())
+  handleRemoteInput(); // Проверяет сигнал с ИК-пульта сама (rc5IcuGetFrame(), см. rc5_icu.h)
 
   updateSourceOverlay(); // Откатывает полноэкранный показ Source (Set с пульта) по таймеру
 
@@ -457,12 +457,11 @@ void loop() {
   // Bass/High пропускаются, пока играет разовая анимация переключения Bypass (см. блок ниже) —
   // она сама берёт на себя отображение этих двух колец, пока активна
   static unsigned long lastRingUpdate = 0;
-  // Придерживаем обновление колец на MENU_NAVIGATION_RING_PAUSE_MS после команды НАВИГАЦИИ
-  // по меню (Right/Left/Enter/Set) — см. подробный комментарий у MENU_NAVIGATION_RING_PAUSE_MS
-  // (hardware_settings.h). НЕ применяется к Up/Down (та команда не трогает
-  // lastMenuNavigationTime() вообще) — там кольца обязаны жить в реальном времени
-  bool recentMenuNavigation = millis() - lastMenuNavigationTime() < MENU_NAVIGATION_RING_PAUSE_MS;
-  if (!powerOff && !recentMenuNavigation && millis() - lastRingUpdate >= RING_UPDATE_INTERVAL_MS) {
+  // Раньше здесь была пауза (MENU_NAVIGATION_RING_PAUSE_MS) на короткое время после команд
+  // навигации — обходила потерю RC5-кадра, если приём совпадал с NeoPixel.show(). Убрана:
+  // причина устранена на уровне приёма (см. rc5_icu.h — декодер на Input Capture Timer4
+  // не теряет кадры даже во время бит-банга колец), костыль больше не нужен
+  if (!powerOff && millis() - lastRingUpdate >= RING_UPDATE_INTERVAL_MS) {
     lastRingUpdate = millis();
     int bassRaw, highRaw, volumeRaw;
     int bassPercent = readBassPotPercent(&bassRaw);
@@ -555,10 +554,7 @@ void loop() {
   // и без перечтения потенциометра (дёшево: просто пересчёт яркости уже известного
   // значения + show())
   static unsigned long lastBlinkRender = 0;
-  // Тот же MENU_NAVIGATION_RING_PAUSE_MS, что и у основного блока колец выше — эта анимация
-  // тоже дёргает NeoPixel.show() (renderDbRing()/renderVolumeRingBreath()), просто чаще (раз
-  // в 30мс, а не 100мс), и раньше её этим не защищали
-  if (!powerOff && !recentMenuNavigation && millis() - lastBlinkRender >= 30) {
+  if (!powerOff && millis() - lastBlinkRender >= 30) {
     if (bypassAnimMode == 0) {
       if (dbRingBlinking(bassRingState)) {
         renderDbRing(bassRing, bassRingState.lastValue, bassRingState);
@@ -579,9 +575,7 @@ void loop() {
   // Режим 2 (мигание красным, Bypass включён) — держится ВСЁ время, пока Bypass включён,
   // и сам не заканчивается: заканчивает его только повторный triggerBypassAnim() при
   // выключении Bypass (переводит в режим 1)
-  // Тот же MENU_NAVIGATION_RING_PAUSE_MS — эта анимация тоже дёргает NeoPixel.show()
-  // (renderDbRing()/renderBypassFillAnim()/renderBypassBlinkAnim())
-  if (!powerOff && !recentMenuNavigation && bypassAnimMode != 0) {
+  if (!powerOff && bypassAnimMode != 0) {
     unsigned long elapsed = millis() - bypassAnimStart;
     if (bypassAnimMode == 1 && elapsed >= BYPASS_FILL_TOTAL_MS) {
       bypassAnimMode = 0;

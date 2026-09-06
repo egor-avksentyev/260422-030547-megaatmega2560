@@ -10,16 +10,23 @@
 #include "encoder.h"
 #include "animations/mute_animation.h"
 #include "animations/unmute_animation.h"
-#include <IRremote.hpp>
+#include "rc5_icu.h"
 
 void initRemoteControl() {
-  IrReceiver.begin(IR_PIN, ENABLE_LED_FEEDBACK);
+  rc5IcuInit(); // Input Capture Timer4 (пин 49) — см. rc5_icu.h. Заменил IRremote/IrReceiver
+  // (таймерный опрос IR_PIN=19) — тот терял кадры во время NeoPixel.show() (см. историю
+  // чата/тест с параллельным rc5_icu на ветке experiment/icu-rc5-decoder: из 28 кадров
+  // подряд во время работы колец IRremote потерял 3, ICU — ни одного)
 }
 
-static unsigned long lastMenuNavigationTimeValue = 0;
-
-unsigned long lastMenuNavigationTime() {
-  return lastMenuNavigationTimeValue;
+// Один вызов rc5IcuGetFrame() с отброшенным результатом — отбрасывает "подвисший" кадр,
+// накопленный ISR-ом за время блокирующего вызова (Unmute/Power-анимации ниже), чтобы
+// он не был принят за новое нажатие сразу на следующей итерации loop() — тот же приём,
+// что раньше был через "if (IrReceiver.decode()) IrReceiver.resume();"
+static void drainPendingRc5Frame() {
+  uint8_t address, command;
+  bool toggle;
+  rc5IcuGetFrame(address, command, toggle);
 }
 
 // Перерисовка drawArrowIndicator() (кружок+стрелка+кольцо) на КАЖДЫЙ repeat-кадр Up/Down
@@ -41,18 +48,34 @@ static void throttledSliderRedraw(bool showArrowRight, bool showArrowLeft) {
 }
 
 void handleRemoteInput() {
-  if (IrReceiver.decode()) {
-    if (IrReceiver.decodedIRData.protocol != IR_PROTOCOL || IrReceiver.decodedIRData.address != IR_ADDRESS) {
-      // Не наш пульт: либо чистый шум (Protocol=UNKNOWN), либо наводка (например от моторов),
-      // случайно похожая на валидный кадр другого протокола/адреса — реальная кнопка всегда
-      // приходит как IR_PROTOCOL с Address=IR_ADDRESS
-      IrReceiver.resume();
+  {
+    uint8_t icuAddress, icuCommand;
+    bool icuToggle;
+    if (!rc5IcuGetFrame(icuAddress, icuCommand, icuToggle)) {
+      return;
+    }
+    if (icuAddress != IR_ADDRESS) {
+      // Не наш пульт: наводка (например от моторов), случайно задекодированная как
+      // валидный RC5-кадр с чужим адресом — реальная кнопка всегда приходит с
+      // Address=IR_ADDRESS. Само по себе не-RC5 "не декодируется" вообще — rc5IcuGetFrame()
+      // просто не возвращает true, пока протокольная таблица переходов не соберёт
+      // все 14 валидных бит, отбрасывать отдельно нечего
       return;
     }
 
-    bool isRepeat = IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT;
-    uint16_t irCommand = IrReceiver.decodedIRData.command;
-    IrReceiver.resume(); // Можно принимать следующий кадр — irCommand уже сохранён
+    // Раньше здесь стоял флаг IRDATA_FLAGS_IS_REPEAT от IRremote — RC5-декодер на ICU
+    // такого флага не даёт (протокол сам предоставляет только toggle-бит, а этот
+    // конкретный переобученный пульт, как уже задокументировано в проекте, не всегда
+    // надёжно держит toggle постоянным во время удержания — поэтому вместо toggle
+    // используется то же самое: повтор той же команды в пределах короткого окна). 400мс —
+    // с запасом перекрывает и номинальный период повтора RC5 (~114мс), и реально
+    // замеренный на этом пульте (~300мс, см. тест на ветке experiment/icu-rc5-decoder)
+    static uint8_t lastFrameCommand = 0xFF;
+    static unsigned long lastFrameTime = 0;
+    bool isRepeat = (icuCommand == lastFrameCommand) && (millis() - lastFrameTime < 400);
+    lastFrameCommand = icuCommand;
+    lastFrameTime = millis();
+    uint16_t irCommand = icuCommand;
 
     // Долгое нажатие шлёт кучу repeat-кадров подряд, пока держишь кнопку — для
     // одноразовых действий гасим их у большинства кнопок. Но для Power они нужны, чтобы
@@ -97,7 +120,6 @@ void handleRemoteInput() {
           break;
         }
         lastRightActionTime = millis();
-        lastMenuNavigationTimeValue = millis();
         Serial.println("Right button pressed"); // Отладочный вывод
         if (!inSettingsMode) {
           currentMenuItem = (currentMenuItem + 1) % MENU_ITEM_COUNT;
@@ -139,7 +161,6 @@ void handleRemoteInput() {
           break;
         }
         lastLeftActionTime = millis();
-        lastMenuNavigationTimeValue = millis();
         Serial.println("Left button pressed"); // Отладочный вывод
         if (!inSettingsMode) {
           currentMenuItem = (currentMenuItem - 1 + MENU_ITEM_COUNT) % MENU_ITEM_COUNT;
@@ -184,7 +205,6 @@ void handleRemoteInput() {
         static unsigned long lastEnterActionTime = 0;
         if (millis() - lastEnterActionTime > 200) {
           lastEnterActionTime = millis();
-          lastMenuNavigationTimeValue = millis();
           Serial.println("Enter button pressed"); // Отладочный вывод
           if (!inSettingsMode) {
             inSettingsMode = true;
@@ -244,9 +264,7 @@ void handleRemoteInput() {
             // handleRemoteInput() увидел бы этот "подвисший" кадр как новое нажатие сразу же на
             // следующей итерации loop() — то есть Mute мгновенно переключился бы обратно.
             // Отсюда и ощущение "нужно нажать несколько раз, чтобы попасть в нужный момент"
-            if (IrReceiver.decode()) {
-              IrReceiver.resume();
-            }
+            drainPendingRc5Frame();
             // Надпись "mute" рисуется на всех экранах (см. drawStatusIndicators() в
             // display_logic.cpp) — перерисовываем ТЕКУЩИЙ экран (не всегда drawMenu(), иначе
             // это скачок в карусель меню и обратно)
@@ -372,7 +390,6 @@ void handleRemoteInput() {
         static unsigned long lastSetActionTime = 0;
         if (millis() - lastSetActionTime > 200) {
           lastSetActionTime = millis();
-          lastMenuNavigationTimeValue = millis();
           Serial.println("Set button pressed"); // Отладочный вывод
           beginSourceOverlay(); // Запоминает, куда вернуться, ДО того как currentMenuItem поменяется
           for (int i = 0; i < MENU_ITEM_COUNT; i++) {
@@ -401,9 +418,7 @@ void handleRemoteInput() {
             powerOff = false;
             // Та же ловушка "подвисшего" ИК-кадра, что у Unmute (см. case IR_MUTE выше) —
             // приём ИК работает по таймеру независимо от loop(), пока мы тут блокированы
-            if (IrReceiver.decode()) {
-              IrReceiver.resume();
-            }
+            drainPendingRc5Frame();
           } else {
             // Отключение устройств, затем отображение "POWER OFF"
             digitalWrite(LED_BASS_PIN, LOW);
@@ -423,9 +438,7 @@ void handleRemoteInput() {
             powerOff = true;
             // Та же ловушка — несколько секунд блокирующих вызовов выше могли накопить
             // "подвисший" кадр (например ещё одно Power, пока ждали выключения)
-            if (IrReceiver.decode()) {
-              IrReceiver.resume();
-            }
+            drainPendingRc5Frame();
           }
         }
         break;
