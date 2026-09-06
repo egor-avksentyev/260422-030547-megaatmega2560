@@ -233,10 +233,8 @@ const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT", "STREAMER"};
 // rc5_icu.cpp (там прямая работа с регистрами DDRL/PINL), это только для
 // документации/пайки
 #define IR_ICU_PIN 49
-// Старый пин IRremote — прошивкой больше не читается вообще (initRemoteControl()
-// теперь вызывает rc5IcuInit(), см. remote_control.cpp). Провод на этот пин можно
-// физически оставить как есть (не мешает) или отпаять — на работу не влияет
-#define IR_PIN 19
+// Старый пин IRremote (был 19) — провод отпаян, прошивка его больше не читает и не
+// объявляет вообще (initRemoteControl() теперь вызывает rc5IcuInit())
 // RC5 — единственный протокол, который умеет декодировать rc5_icu.cpp, отдельной
 // проверки/константы протокола (раньше — IR_PROTOCOL для IRremote) больше не нужно
 #define IR_ADDRESS 0x18
