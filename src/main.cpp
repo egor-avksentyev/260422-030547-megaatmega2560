@@ -42,13 +42,20 @@ bool volumeOverlayActive = false;
 static int volumeOverlaySavedMenuItem = 0;
 static bool volumeOverlaySavedInSettingsMode = false;
 
-// Компактный оверлей положения ручки (drawKnobPositionOverlay(), display_logic.cpp), когда
-// пользователь крутит Bass/High/Volume РУКОЙ, сидя на карусели меню — см. блок обнаружения
-// в loop(). НЕ трогает currentMenuItem/inSettingsMode вообще — только область иконки
-// карусели (MENU_ICON_X/Y), и только частичным обновлением OLED (не NeoPixel). -1 = не
-// активен, 0/1/2 = Bass/High/Volume
+// Полноэкранный показ положения ручки (drawArrowIndicator(), тот же экран, что и настоящий
+// вход в настройки), когда пользователь крутит Bass/High/Volume РУКОЙ, сидя на карусели
+// меню — см. блок обнаружения в loop(). currentMenuItem временно подставляется под нужный
+// пункт (Bass=0/High=1/Volume=2 — те же индексы, что в menuItems[]), как и у
+// beginVolumeOverlay(), но с собственным сохранённым состоянием и своим (не моторным)
+// таймаутом простоя (KNOB_OVERLAY_IDLE_TIMEOUT_MS) — не переиспользует volumeOverlayActive,
+// у той свой смысл (глобальный шорткат Up/Down) и своё условие выхода. -1 = не активен,
+// 0/1/2 = Bass/High/Volume
 static int knobIndicatorActiveItem = -1;
 static unsigned long knobIndicatorLastMovementTime = 0;
+static int knobOverlaySavedMenuItem = 0; // currentMenuItem на карусели ДО того, как рука взялась за ручку
+// Сентинел вместо INT32_MIN — int на AVR 16-битный (-32768..32767), реальные значения
+// (дБ -10..10 или % 0..100) никогда не окажутся рядом с этим числом
+static int knobOverlayLastDrawnValue = -32000; // не перерисовывать экран, пока значение не изменилось
 
 static int volumeMenuIndex() {
   for (int i = 0; i < MENU_ITEM_COUNT; i++) {
@@ -410,8 +417,9 @@ void loop() {
   }
 
   // Обновление светодиодов в режиме настройки (или во время временного показа Volume
-  // с карусели через Up/Down — см. volumeOverlayActive)
-  if (inSettingsMode || volumeOverlayActive) {
+  // с карусели через Up/Down — см. volumeOverlayActive, или во время ручного вращения
+  // Bass/High/Volume рукой — см. knobIndicatorActiveItem)
+  if (inSettingsMode || volumeOverlayActive || knobIndicatorActiveItem != -1) {
     if (menuItems[currentMenuItem] == "Bass") {
       blinkLED(LED_BASS_PIN);
     } else if (menuItems[currentMenuItem] == "High") {
@@ -479,34 +487,54 @@ void loop() {
 
     // Обнаружение ручного вращения любого кноба РУКОЙ, пока сидим на карусели —
     // isBassSeeking()/isHighSeeking()/isVolumeSeeking() исключают движение от фонового
-    // автовозврата (после Bypass/питания/EQ-пресета) — это не рука. Оверлей (см. ниже)
-    // рисуется только через OLED (updateDisplayArea()), NeoPixel не трогает вообще — поэтому,
-    // в отличие от полноэкранного варианта, не нужно подгадывать момент относительно пульта
-    static int lastBassRaw = bassRaw, lastHighRaw = highRaw, lastVolumeRaw = volumeRaw;
+    // автовозврата (после Bypass/питания/EQ-пресета) — это не рука.
+    //
+    // Сравнение идёт по УЖЕ ПЕРЕВЕДЁННОМУ значению (dB/%), а не по raw ADC — см. подробный
+    // комментарий у KNOB_OVERLAY_VALUE_THRESHOLD_DB/_PERCENT (hardware_settings.h): потенциометры
+    // откалиброваны неравномерно, и raw-порог был почти недостижим у самого начала шкалы
+    // (-10dB/0%), где raw меняется очень мало на градус поворота — именно там, откуда обычно
+    // начинают крутить, если ручка стояла на нуле
+    // Имена сохранены как есть (lastXValue/xKnobStreak), хотя по факту это теперь "точка
+    // отсчёта окна"/"счётчик тиков внутри окна" — см. sustainedKnobMovement() ниже
+    static int lastBassValue = bassPercent, lastHighValue = highPercent, lastVolumeValue = volumePercent;
     static byte bassKnobStreak = 0, highKnobStreak = 0, volumeKnobStreak = 0;
 
-    // Сравнение ВСЕГДА со СОСЕДНИМ тиком (скользящее окно), а не с зафиксированной точкой —
-    // иначе, как только ручка реально уедет в новое положение и там останется, отклонение от
-    // старой "базовой" точки никогда больше не опустится ниже порога, и индикатор завис бы
-    // навсегда (на эти грабли уже наступали)
-    auto sustainedKnobMovement = [](int raw, int* lastRaw, byte* streak) -> bool {
-      bool moved = abs(raw - *lastRaw) >= KNOB_OVERLAY_RAW_THRESHOLD;
-      *lastRaw = raw;
-      if (moved) {
-        if (*streak < KNOB_OVERLAY_CONSECUTIVE_TICKS) {
-          (*streak)++;
-        }
-      } else {
-        *streak = 0;
+    // Окно целиком: сравниваем НАЧАЛО окна (значение KNOB_OVERLAY_CONSECUTIVE_TICKS тиков
+    // назад) с ТЕКУЩИМ тиком — а не требуем, чтобы КАЖДЫЙ из N соседних тиков по отдельности
+    // дал скачок ≥ порога. У Bass/High всего ~21 грубая ступенька дБ на весь диапазон
+    // (в отличие от Volume с её 101 %), и усреднение ADC (64 сэмпла) иногда даёт тик без
+    // изменения даже во время реального непрерывного вращения — требование "N подряд"
+    // почти никогда не набиралось (кольцо при этом реагировало нормально — у него такого
+    // фильтра нет). Как только накопленное смещение от начала окна превышает порог — окно
+    // сдвигается вперёд (текущее значение становится новой точкой отсчёта), не считая
+    // тиков; если окно истекло (набралось N тиков), а порог так и не превышен — тоже
+    // сдвигаем окно вперёд, а не копим дрейф бесконечно.
+    //
+    // Порог свой у каждой ручки (threshold-параметр, не общий #define) — у Volume дребезг
+    // контакта (особенно в нижней части хода, см. VOLUME_RING_FIRST_LED_*_PERCENT в
+    // hardware_settings.h — та же наводка) может дать скачок на 1-3% сам по себе, без
+    // касания рукой; у Bass/High свой порог в дБ, шире не нужен (там наоборот было мало
+    // разрешения, а не наводка)
+    auto sustainedKnobMovement = [](int value, int* windowStartValue, byte* ticksInWindow, int threshold) -> bool {
+      bool triggered = abs(value - *windowStartValue) >= threshold;
+      (*ticksInWindow)++;
+      if (triggered || *ticksInWindow >= KNOB_OVERLAY_CONSECUTIVE_TICKS) {
+        *windowStartValue = value;
+        *ticksInWindow = 0;
       }
-      return *streak >= KNOB_OVERLAY_CONSECUTIVE_TICKS;
+      return triggered;
     };
 
-    bool onCarouselIdle = !inSettingsMode && !volumeOverlayActive && !sourceOverlayActive && !isMuted && !powerOff;
+    // KNOB_OVERLAY_MOTOR_SETTLE_MS после любой команды на мотор (Up/Down, автовозврат) —
+    // остаточное механическое "доседание" потенциометра иначе могло быть принято за
+    // настоящее ручное вращение сразу после отпускания кнопки (см. hardware_settings.h)
+    bool onCarouselIdle = !inSettingsMode && !volumeOverlayActive && !sourceOverlayActive && !isMuted && !powerOff
+        && millis() - lastMotorInputTime >= KNOB_OVERLAY_MOTOR_SETTLE_MS;
     if (onCarouselIdle) {
-      bool bassSustained = sustainedKnobMovement(bassRaw, &lastBassRaw, &bassKnobStreak);
-      bool highSustained = sustainedKnobMovement(highRaw, &lastHighRaw, &highKnobStreak);
-      bool volumeSustained = sustainedKnobMovement(volumeRaw, &lastVolumeRaw, &volumeKnobStreak);
+      bool bassSustained = sustainedKnobMovement(bassPercent, &lastBassValue, &bassKnobStreak, KNOB_OVERLAY_VALUE_THRESHOLD_DB);
+      bool highSustained = sustainedKnobMovement(highPercent, &lastHighValue, &highKnobStreak, KNOB_OVERLAY_VALUE_THRESHOLD_DB);
+      bool volumeSustained = sustainedKnobMovement(volumePercent, &lastVolumeValue, &volumeKnobStreak, KNOB_OVERLAY_VALUE_THRESHOLD_PERCENT);
+      int previousActiveItem = knobIndicatorActiveItem;
       if (!isBassSeeking() && bassSustained) {
         knobIndicatorActiveItem = 0;
         knobIndicatorLastMovementTime = millis();
@@ -517,36 +545,64 @@ void loop() {
         knobIndicatorActiveItem = 2;
         knobIndicatorLastMovementTime = millis();
       }
-      // Пока показан — держим значение свежим на каждый тик, независимо от того, что
-      // именно сейчас вызвало срабатывание выше (та же ручка может продолжать крутиться)
-      if (knobIndicatorActiveItem == 0) {
-        drawKnobPositionOverlay("Bass", bassPercent, "dB");
-      } else if (knobIndicatorActiveItem == 1) {
-        drawKnobPositionOverlay("High", highPercent, "dB");
-      } else if (knobIndicatorActiveItem == 2) {
-        drawKnobPositionOverlay("Vol", volumePercent, "%");
+      if (knobIndicatorActiveItem != -1) {
+        if (previousActiveItem == -1) {
+          // Карусель -> оверлей: запомнить, куда вернуться после (см. идентичный приём у
+          // beginVolumeOverlay())
+          knobOverlaySavedMenuItem = currentMenuItem;
+        }
+        if (previousActiveItem != knobIndicatorActiveItem) {
+          // Только что вошли или сменился показываемый пункт — сбросить кэш последнего
+          // нарисованного значения, иначе случайное совпадение чисел между ручками
+          // пропустило бы самую первую отрисовку нового пункта
+          knobOverlayLastDrawnValue = -32000;
+        }
+        // Bass/High/Volume — индексы 0/1/2 в menuItems[] по построению (main.cpp), поэтому
+        // knobIndicatorActiveItem можно подставлять напрямую, без отдельного поиска по имени
+        currentMenuItem = knobIndicatorActiveItem;
+        int shownValue = (knobIndicatorActiveItem == 0) ? bassPercent
+                        : (knobIndicatorActiveItem == 1) ? highPercent
+                        : volumePercent;
+        // Полноэкранный вид — тот же drawArrowIndicator(), что и настоящий вход в настройки —
+        // но только когда значение реально изменилось, а не на каждый 100мс тик подряд одно и то же
+        if (shownValue != knobOverlayLastDrawnValue) {
+          knobOverlayLastDrawnValue = shownValue;
+          drawArrowIndicator(0, false, false);
+        }
       }
     } else {
       // Не на карусели — сбрасываем накопленное состояние, а не копим его вхолостую.
       // Иначе движение, которое сделал сам пульт (например реальный ход мотора Volume при
       // удержании Up/Down через beginVolumeOverlay()), успевало "накопить" стрик, и сразу
       // после возврата на карусель индикатор включался бы повторно, как будто рукой
-      lastBassRaw = bassRaw;
-      lastHighRaw = highRaw;
-      lastVolumeRaw = volumeRaw;
+      lastBassValue = bassPercent;
+      lastHighValue = highPercent;
+      lastVolumeValue = volumePercent;
       bassKnobStreak = 0;
       highKnobStreak = 0;
       volumeKnobStreak = 0;
-      knobIndicatorActiveItem = -1;
+      if (knobIndicatorActiveItem != -1) {
+        // Что-то другое перехватило экран, пока оверлей был активен (Mute/Power/Source-шорткат/
+        // настоящий вход в настройки через Enter). Если это был настоящий Enter — inSettingsMode
+        // уже true, пользователь легитимно зашёл в тот пункт, на который сейчас указывает
+        // currentMenuItem, тянуть его обратно нельзя. Во всех остальных случаях восстанавливаем
+        // то, что было на карусели ДО того, как рука взялась за ручку
+        if (!inSettingsMode) {
+          currentMenuItem = knobOverlaySavedMenuItem;
+        }
+        knobIndicatorActiveItem = -1;
+      }
     }
   }
 
   // Гасим оверлей положения, если рукой перестали крутить — вне тика выше, чтобы
-  // 1-секундный таймаут срабатывал точно. Саму область при этом ничего специально не
-  // "чистит" — как только knobIndicatorActiveItem снова -1, обычная иконка карусели (блок
-  // выше) сама перерисует её на следующем плановом тике
+  // 1-секундный таймаут срабатывал точно. В отличие от компактного варианта, экран сейчас
+  // занят ПОЛНОЙ настройкой (drawArrowIndicator()), а не иконкой карусели — просто перестать
+  // его трогать недостаточно, нужно явно вернуть currentMenuItem и перерисовать карусель
   if (knobIndicatorActiveItem != -1 && millis() - knobIndicatorLastMovementTime >= KNOB_OVERLAY_IDLE_TIMEOUT_MS) {
     knobIndicatorActiveItem = -1;
+    currentMenuItem = knobOverlaySavedMenuItem;
+    drawMenu();
   }
 
   // Во время анимации мигания (возврат в 0dB, дыхание Volume выше середины шкалы)

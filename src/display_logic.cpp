@@ -68,41 +68,6 @@ void markPartialDisplayTransfer() {
   lastPartialDisplayTransferTime = millis();
 }
 
-// См. подробный комментарий в display_logic.h. Пропускает свой ход (не форсирует задержку),
-// если недавно была любая другая передача на дисплей — тот же приём, что у
-// animate*IconPartial() (bass_volume_high_animation.cpp и т.п.)
-void drawKnobPositionOverlay(const char* label, int value, const char* unit) {
-  static unsigned long lastPartialUpdate = 0;
-  unsigned long now = millis();
-  unsigned long lastAnyDisplayTransfer = max(lastPartialUpdate, lastMenuDrawTime());
-  if (now - lastAnyDisplayTransfer < DISPLAY_REDRAW_MIN_GAP_MS) {
-    return;
-  }
-  lastPartialUpdate = now;
-
-  // drawXBM у иконок прозрачен для нулевых бит и не чистит фон сам — здесь красим box
-  // цветом фона явно, тем же приёмом, иначе старый кадр иконки/предыдущее значение
-  // проглядывали бы через новый текст
-  u8g2.setDrawColor(0);
-  u8g2.drawBox(MENU_ICON_X, MENU_ICON_Y, KNOB_POSITION_OVERLAY_WIDTH, KNOB_POSITION_OVERLAY_HEIGHT);
-  u8g2.setDrawColor(1);
-  u8g2.setFont(KNOB_POSITION_OVERLAY_FONT);
-  u8g2.setCursor(MENU_ICON_X + KNOB_POSITION_OVERLAY_PAD_X, MENU_ICON_Y + KNOB_POSITION_OVERLAY_LABEL_Y_OFFSET);
-  u8g2.print(label);
-  u8g2.setCursor(MENU_ICON_X + KNOB_POSITION_OVERLAY_PAD_X, MENU_ICON_Y + KNOB_POSITION_OVERLAY_VALUE_Y_OFFSET);
-  u8g2.print(value);
-  u8g2.print(unit);
-
-  // Тайлы (8x8px) под областью оверлея — как у animate*IconPartial(), см. там же за
-  // объяснением, почему именно тайлами, а не всем буфером (u8g2.sendBuffer())
-  uint8_t tx = MENU_ICON_X / 8;
-  uint8_t tw = (MENU_ICON_X + KNOB_POSITION_OVERLAY_WIDTH - 1) / 8 - tx + 1;
-  uint8_t ty = MENU_ICON_Y / 8;
-  uint8_t th = (MENU_ICON_Y + KNOB_POSITION_OVERLAY_HEIGHT - 1) / 8 - ty + 1;
-  u8g2.updateDisplayArea(tx, ty, tw, th);
-  markPartialDisplayTransfer();
-}
-
 void drawMenu() {
   waitForDisplayRedrawGap();
 
