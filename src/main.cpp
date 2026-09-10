@@ -27,6 +27,7 @@
 #include "animations/eq_animation.h"
 #include "animations/info_animation.h"
 #include "temperature_sensor.h"
+#include "esp32_link.h"
 
 String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source", "EQ", "Info"};
 int currentMenuItem = 0;
@@ -56,6 +57,77 @@ static int knobOverlaySavedMenuItem = 0; // currentMenuItem на карусел�
 // Сентинел вместо INT32_MIN — int на AVR 16-битный (-32768..32767), реальные значения
 // (дБ -10..10 или % 0..100) никогда не окажутся рядом с этим числом
 static int knobOverlayLastDrawnValue = -32000; // не перерисовывать экран, пока значение не изменилось
+
+// Now Playing (esp32_link.h) — см. main.h за смыслом обоих флагов
+bool nowPlayingActive = false;
+bool nowPlayingMenuVisitActive = false;
+static unsigned long nowPlayingMenuVisitLastActivity = 0;
+// Source, который был выбран ДО автопереключения на Streamer — восстанавливается, когда
+// воспроизведение на Arylic останавливается (см. updateNowPlaying() ниже)
+static int sourceBeforeStreamer = 0;
+
+void exitNowPlayingToMenu() {
+  nowPlayingMenuVisitActive = true;
+  nowPlayingMenuVisitLastActivity = millis();
+  inSettingsMode = false;
+  drawMenu();
+}
+
+void refreshNowPlayingMenuActivity() {
+  if (nowPlayingMenuVisitActive) {
+    nowPlayingMenuVisitLastActivity = millis();
+  }
+}
+
+// Опрашивает esp32_link (esp32LinkPoll() дёргает вызывающая сторона отдельно — здесь только
+// реакция на изменение состояния), переключает Source на Streamer/обратно по фронтам
+// PLAY:0/1, перерисовывает полноэкранный Now Playing, когда меняется метадата, и возвращает
+// из "визита" в меню по таймауту простоя. Вызывается из loop() пока !powerOff — см. там же
+static void updateNowPlaying() {
+  static bool wasPlaying = false;
+  static char lastRenderedText[ESP32_LINK_META_MAX_LEN + 1] = "";
+
+  bool playingNow = esp32LinkIsPlaying();
+
+  if (playingNow && !wasPlaying) {
+    // Восходящий фронт: Arylic начал играть — запоминаем текущий Source (может быть уже
+    // Streamer, тогда восстановление ниже будет безобидным no-op) и переключаем на него
+    sourceBeforeStreamer = settings[sourceMenuIndex()];
+    settings[sourceMenuIndex()] = streamerSourceIndex();
+    applySourceSelection();
+    nowPlayingActive = true;
+    nowPlayingMenuVisitActive = false;
+    lastRenderedText[0] = '\0'; // форсируем перерисовку блоком ниже на этом же тике
+  } else if (!playingNow && wasPlaying) {
+    // Нисходящий фронт: пауза/стоп — возвращаем прежний Source и уходим в обычную карусель,
+    // независимо от того, был показан полноэкранный Now Playing или пользователь уже
+    // "гостил" в меню (nowPlayingMenuVisitActive)
+    settings[sourceMenuIndex()] = sourceBeforeStreamer;
+    applySourceSelection();
+    nowPlayingActive = false;
+    nowPlayingMenuVisitActive = false;
+    inSettingsMode = false;
+    if (!isMuted) {
+      drawMenu();
+    }
+  }
+  wasPlaying = playingNow;
+
+  if (nowPlayingActive && !nowPlayingMenuVisitActive && !isMuted) {
+    if (strcmp(esp32LinkNowPlayingText(), lastRenderedText) != 0) {
+      strncpy(lastRenderedText, esp32LinkNowPlayingText(), sizeof(lastRenderedText) - 1);
+      lastRenderedText[sizeof(lastRenderedText) - 1] = '\0';
+      drawNowPlayingScreen();
+    }
+  }
+
+  if (nowPlayingMenuVisitActive && millis() - nowPlayingMenuVisitLastActivity > NOW_PLAYING_MENU_IDLE_TIMEOUT_MS) {
+    nowPlayingMenuVisitActive = false;
+    if (!isMuted) {
+      drawNowPlayingScreen();
+    }
+  }
+}
 
 static int volumeMenuIndex() {
   for (int i = 0; i < MENU_ITEM_COUNT; i++) {
@@ -275,6 +347,7 @@ void setup() {
 
   initRemoteControl(); // Теперь на Input Capture Timer4 (пин 49) — см. rc5_icu.h/remote_control.cpp
   initTemperatureSensors(); // Датчики DS18B20, пункт меню "Info"
+  esp32LinkInit(); // Serial2 (RX2, пин 17, фиксированный) — приём от ESP32-компаньона, см. esp32_link.h
   attachInterrupt(digitalPinToInterrupt(ENCODER_A_PIN), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCODER_B_PIN), encoderISR, CHANGE);
 
@@ -291,6 +364,13 @@ void setup() {
 
 void loop() {
   handleRemoteInput(); // Проверяет сигнал с ИК-пульта сама (rc5IcuGetFrame(), см. rc5_icu.h)
+
+  // Приём от ESP32-компаньона (esp32_link.h) — как и остальной фон, не имеет смысла, пока
+  // система выключена (реле/дисплей всё равно обесточены)
+  if (!powerOff) {
+    esp32LinkPoll();
+    updateNowPlaying();
+  }
 
   updateSourceOverlay(); // Откатывает полноэкранный показ Source (Set с пульта) по таймеру
 
@@ -311,9 +391,14 @@ void loop() {
     updateVolumeSeek(); // Автовозврат Volume к VOLUME_POWERON_TARGET_PERCENT после включения питания
   }
 
-  if (isMuted || powerOff) {
-    encoderValue = 0; // Отбрасываем накопленное вращение — навигация недоступна, пока включён Mute или система выключена
+  // Пока показан полноэкранный Now Playing (до того, как нажали Enter/клик энкодера) —
+  // вращение энкодера тоже недоступно, тот же принцип, что у Mute/powerOff выше (см.
+  // handleRemoteInput() в remote_control.cpp за симметричным блоком для пульта)
+  bool nowPlayingFullscreen = nowPlayingActive && !nowPlayingMenuVisitActive;
+  if (isMuted || powerOff || nowPlayingFullscreen) {
+    encoderValue = 0; // Отбрасываем накопленное вращение — навигация недоступна
   } else if (encoderValue != 0) {
+    refreshNowPlayingMenuActivity(); // Вращение энкодера тоже считается активностью в "визите" из Now Playing
     if (!inSettingsMode) {
       if (encoderValue > 0) {
         currentMenuItem = (currentMenuItem + 1) % MENU_ITEM_COUNT;
@@ -412,9 +497,11 @@ void loop() {
           applyEqPreset(settings[currentMenuItem]);
           drawEqScreen(settings[currentMenuItem]);
         } else if (menuItems[currentMenuItem] == "Info") {
-          // Нет редактируемого значения — просто гасим накопленное вращение, иначе
-          // encoderValue никогда не обнулится и утащит "хвост" в следующий пункт меню
+          // Прокрутка списка строк (AC/температуры/IP/статус Arylic) — не по кругу, а
+          // зажато (constrain), см. drawInfoScreen() в display_logic.cpp за деталями
+          settings[currentMenuItem] = constrain(settings[currentMenuItem] + direction, 0, INFO_ROW_COUNT - INFO_LIST_VISIBLE_ROWS);
           encoderValue = 0;
+          drawInfoScreen();
         }
       }
     }
@@ -440,7 +527,7 @@ void loop() {
   // Крутящаяся иконка пункта меню в углу drawMenu(), пока пользователь сидит на карусели
   // (не зашёл в настройки). Частичное обновление тайлов (не весь экран) — см. подробности в
   // hardware_settings.h у MENU_ICON_* и в bass_volume_high_animation.h
-  if (!isMuted && !inSettingsMode && !volumeOverlayActive && !sourceOverlayActive && !powerOff && knobIndicatorActiveItem == -1) {
+  if (!isMuted && !inSettingsMode && !volumeOverlayActive && !sourceOverlayActive && !powerOff && knobIndicatorActiveItem == -1 && !nowPlayingFullscreen) {
     if (menuItems[currentMenuItem] == "Bass" || menuItems[currentMenuItem] == "High" || menuItems[currentMenuItem] == "Volume") {
       animateBassVolumeHighIconPartial(MENU_ICON_X, MENU_ICON_Y);
     } else if (menuItems[currentMenuItem] == "VU Meter") {

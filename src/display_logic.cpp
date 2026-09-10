@@ -14,6 +14,9 @@
 #include "animations/info_animation.h"
 #include "temperature_sensor.h"
 #include "voltage_sensor.h"
+#include "esp32_link.h"
+#include <string.h>
+#include <stdio.h>
 
 // Тип переключается вместе с DISPLAY_DRIVER_* (hardware_settings.h) — см. display_logic.h
 #ifdef DISPLAY_DRIVER_SH1106
@@ -457,23 +460,12 @@ void drawInfoScreen() {
   u8g2.print(menuItems[currentMenuItem]);
   drawTitleUnderline(INFO_LABEL_X, INFO_LABEL_Y, "Info", INFO_LABEL_UNDERLINE_Y_OFFSET);
 
+  // Строк больше, чем помещается разом (см. INFO_ROW_COUNT/INFO_LIST_VISIBLE_ROWS,
+  // hardware_settings.h) — Up/Down прокручивают окно, позиция хранится в
+  // settings[currentMenuItem], как и у Source/EQ, но зажата (constrain), не по кругу —
+  // это линейный список, а не набор дискретных вариантов на выбор
   float temps[3];
   readAllTemperatures(temps);
-
-  u8g2.setFont(INFO_ROW_FONT);
-  for (int i = 0; i < 3; i++) {
-    int y = INFO_LIST_Y_START + i * INFO_LIST_LINE_HEIGHT;
-    u8g2.setCursor(INFO_ROW_X, y);
-    u8g2.print(tempSensorLabels[i]);
-    u8g2.print(": ");
-    if (temps[i] == TEMP_SENSOR_INVALID) {
-      u8g2.print("--");
-    } else {
-      u8g2.print(temps[i], 1);
-      u8g2.print("C");
-    }
-  }
-
   int voltageRaw;
   int voltage = readMainsVoltage(&voltageRaw);
   // Для калибровки/подстройки подстроечника на модуле — крути его и подай известное
@@ -485,12 +477,89 @@ void drawInfoScreen() {
   Serial.print(voltage);
   Serial.println("V");
 
-  u8g2.setFont(INFO_VOLTAGE_FONT);
-  u8g2.setCursor(INFO_VOLTAGE_X, INFO_VOLTAGE_Y);
-  u8g2.print(INFO_VOLTAGE_LABEL);
-  u8g2.print(":");
-  u8g2.print(voltage);
-  u8g2.print("V");
+  char rowLabels[INFO_ROW_COUNT][10];
+  char rowValues[INFO_ROW_COUNT][16];
+
+  strcpy(rowLabels[0], INFO_VOLTAGE_LABEL);
+  snprintf(rowValues[0], sizeof(rowValues[0]), "%dV", voltage);
+
+  for (int i = 0; i < 3; i++) {
+    strncpy(rowLabels[1 + i], tempSensorLabels[i], sizeof(rowLabels[0]) - 1);
+    rowLabels[1 + i][sizeof(rowLabels[0]) - 1] = '\0';
+    if (temps[i] == TEMP_SENSOR_INVALID) {
+      strcpy(rowValues[1 + i], "--");
+    } else {
+      // dtostrf(), не snprintf("%f"...) — avr-libc по умолчанию собран без поддержки
+      // float в *printf, dtostrf() всегда доступна и как раз для этого существует
+      char numBuf[8];
+      dtostrf(temps[i], 1, 1, numBuf);
+      snprintf(rowValues[1 + i], sizeof(rowValues[0]), "%sC", numBuf);
+    }
+  }
+
+  strcpy(rowLabels[4], "Setup");
+  strncpy(rowValues[4], ESP32_SETUP_IP_STRING, sizeof(rowValues[0]) - 1);
+  rowValues[4][sizeof(rowValues[0]) - 1] = '\0';
+
+  strcpy(rowLabels[5], "Control");
+  const char* controlIp = esp32LinkControlIp();
+  strncpy(rowValues[5], controlIp[0] ? controlIp : "--", sizeof(rowValues[0]) - 1);
+  rowValues[5][sizeof(rowValues[0]) - 1] = '\0';
+
+  strcpy(rowLabels[6], "Arylic");
+  strcpy(rowValues[6], !esp32LinkArylicKnown() ? "?" : (esp32LinkArylicOk() ? "ok" : "disconnected"));
+
+  int maxScroll = INFO_ROW_COUNT - INFO_LIST_VISIBLE_ROWS;
+  int scroll = constrain(settings[currentMenuItem], 0, maxScroll);
+  settings[currentMenuItem] = scroll;
+
+  u8g2.setFont(INFO_ROW_FONT);
+  for (int row = 0; row < INFO_LIST_VISIBLE_ROWS; row++) {
+    int i = scroll + row;
+    int y = INFO_LIST_Y_START + row * INFO_LIST_LINE_HEIGHT;
+    u8g2.setCursor(INFO_ROW_X, y);
+    u8g2.print(rowLabels[i]);
+    u8g2.print(": ");
+    u8g2.print(rowValues[i]);
+  }
+
+  // "N-M/COUNT" в углу — единственная подсказка, что список вообще можно листать дальше
+  u8g2.setFont(INFO_SCROLL_INDICATOR_FONT);
+  u8g2.setCursor(INFO_SCROLL_INDICATOR_X, INFO_SCROLL_INDICATOR_Y);
+  u8g2.print(scroll + 1);
+  u8g2.print("-");
+  u8g2.print(scroll + INFO_LIST_VISIBLE_ROWS);
+  u8g2.print("/");
+  u8g2.print(INFO_ROW_COUNT);
+
+  drawStatusIndicators();
+
+  u8g2.sendBuffer();
+}
+
+void drawNowPlayingScreen() {
+  waitForDisplayRedrawGap();
+
+  u8g2.clearBuffer();
+
+  // Грубое усечение по числу символов (не по реальной ширине в пикселях) — MEGA_LINK_META_MAX_LEN
+  // (40) на стороне ESP32 всё равно не влезает в 128px этим шрифтом; полноценный перенос
+  // строк/бинарный поиск по getStrWidth() тут не стоит своей сложности, см. README ESP32-проекта
+  const char* text = esp32LinkNowPlayingText();
+  char truncated[NOW_PLAYING_TITLE_MAX_CHARS + 1];
+  strncpy(truncated, text, NOW_PLAYING_TITLE_MAX_CHARS);
+  truncated[NOW_PLAYING_TITLE_MAX_CHARS] = '\0';
+
+  u8g2.setFont(NOW_PLAYING_TITLE_FONT);
+  u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_TITLE_Y);
+  u8g2.print(truncated[0] ? truncated : "...");
+
+  u8g2.setFont(NOW_PLAYING_STATUS_FONT);
+  u8g2.setCursor(NOW_PLAYING_STATUS_X, NOW_PLAYING_STATUS_Y);
+  u8g2.print("Playing");
+
+  u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_SOURCE_Y);
+  u8g2.print("Source: Streamer");
 
   drawStatusIndicators();
 

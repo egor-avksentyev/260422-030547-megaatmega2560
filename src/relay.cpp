@@ -3,6 +3,7 @@
 #include "main.h"
 #include "animation_logic.h"
 #include "display_logic.h"
+#include <string.h>
 
 // Применяет settings[] для пункта "Source" (0-3): включает ровно одно из четырёх реле,
 // остальные три принудительно гасит — переключение источников взаимоисключающее
@@ -42,9 +43,24 @@ void checkBypassButton() {
         if (inSettingsMode && menuItems[currentMenuItem] == "Bypass") {
           drawToggleSwitch(settings[4] == 1);
         } else if (!inSettingsMode) {
-          drawMenu();
+          // Пока показан полноэкранный Now Playing — не перетирать его обычной каруселью,
+          // реле переключилось, экран остаётся как был (см. main.h/esp32_link.h)
+          if (nowPlayingActive && !nowPlayingMenuVisitActive) {
+            drawNowPlayingScreen();
+          } else {
+            drawMenu();
+          }
         }
       }
     }
   }
+}
+
+int streamerSourceIndex() {
+  for (int i = 0; i < SOURCE_COUNT; i++) {
+    if (strcmp(sourceNames[i], "STREAMER") == 0) {
+      return i;
+    }
+  }
+  return 0; // Не должно случаться — "STREAMER" всегда есть в sourceNames[]
 }

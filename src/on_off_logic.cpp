@@ -199,6 +199,8 @@ void powerOffDevices() {
   // кольцо этого пункта (тот блок не проверяет powerOff) и оно зажигается заново
   inSettingsMode = false;
   resetCursor();
+  nowPlayingActive = false; // На случай выключения прямо во время показа/визита в меню с Now Playing
+  nowPlayingMenuVisitActive = false;
 
   // Явно гасим светодиоды (LOW = выключено)
   pinMode(LED_BASS_PIN, OUTPUT);

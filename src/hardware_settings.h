@@ -320,21 +320,53 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define INFO_LABEL_X 25
 #define INFO_LABEL_Y 15
 #define INFO_LABEL_UNDERLINE_Y_OFFSET 3
-// Три строки температур — шрифт/позиция/шаг общие на все три (см. drawInfoScreen()
-// в display_logic.cpp: цикл i=0..2, Y = INFO_LIST_Y_START + i * INFO_LIST_LINE_HEIGHT)
+// Info теперь прокручиваемый список (Up/Down с пульта/энкодера, см. drawInfoScreen() в
+// display_logic.cpp) — строк больше, чем помещается на экране разом (AC + 3 температуры +
+// два IP ESP32 + статус Arylic, см. INFO_ROW_COUNT ниже). Одинаковый шрифт/шаг на все строки
+// (раньше у напряжения сети был отдельный, покрупнее и в углу — убрано ради единообразия
+// списка, самого напряжения теперь просто ещё одна строка). Окно из INFO_LIST_VISIBLE_ROWS
+// строк, выбор строки (индекс верхней видимой) хранится в settings[currentMenuItem], как и у
+// Source/EQ — не по кругу, а зажатый (constrain), см. drawInfoScreen()
 #define INFO_ROW_FONT u8g2_font_ncenB08_tr
 #define INFO_ROW_X 10
-#define INFO_LIST_Y_START 38 // Y (baseline) первой строки — ниже заголовка, чтобы не пересекались
-#define INFO_LIST_LINE_HEIGHT 12 // При 3 строках последняя на 62 — укладывается в экран высотой 64
-// Напряжение сети — отдельная строка со своим шрифтом/позицией, независимо от температур
-// выше (не участвует в цикле/шаге INFO_LIST_*, можно двигать и менять шрифт отдельно).
-// По умолчанию — справа от заголовка "Info" на той же высоте (там ещё есть место по
-// ширине), а не 4-й строкой снизу — три температуры и так занимают весь список до низа
-// экрана (38/50/62 при текущих INFO_LIST_*, см. выше)
-#define INFO_VOLTAGE_FONT u8g2_font_ncenB08_tr
-#define INFO_VOLTAGE_X 75
-#define INFO_VOLTAGE_Y 15
-#define INFO_VOLTAGE_LABEL "AC" // Подпись перед значением — поправь под то, что удобнее читать
+#define INFO_LIST_Y_START 38 // Y (baseline) первой видимой строки — ниже заголовка
+#define INFO_LIST_LINE_HEIGHT 12 // При 3 видимых строках последняя на 62 — укладывается в экран высотой 64
+#define INFO_LIST_VISIBLE_ROWS 3
+#define INFO_ROW_COUNT 7 // AC, 3×температура, Setup IP, Control IP, Arylic — см. drawInfoScreen()
+#define INFO_VOLTAGE_LABEL "AC" // Подпись строки напряжения сети — поправь под то, что удобнее читать
+// Маленький индикатор "N/M" в углу — сколько строк всего и где сейчас окно прокрутки,
+// иначе на экране не видно, что список вообще можно листать дальше
+#define INFO_SCROLL_INDICATOR_FONT u8g2_font_5x7_tr
+#define INFO_SCROLL_INDICATOR_X 108
+#define INFO_SCROLL_INDICATOR_Y 15
+
+// --- Связь с ESP32-компаньоном (esp32_link.h/.cpp) — приём по UART, Mega только слушает,
+// см. README.md ("Mega только слушает") и репозиторий esp32-audio-web-control. Serial2 —
+// аппаратный UART Mega, RX2 фиксирован на пине 17 (TX2=16 не используется — см. там же,
+// почему line shifter не нужен), библиотека Mega (в отличие от ESP32) не позволяет и не
+// требует указывать пины у HardwareSerial — они фиксированы аппаратно ---
+#define ESP32_LINK_BAUD 115200
+#define ESP32_LINK_META_MAX_LEN 40 // Должно совпадать с MEGA_LINK_META_MAX_LEN в config.h ESP32-проекта
+// IP, который ESP32 показывает САМ СЕБЕ на время настройки Wi-Fi (своя точка доступа
+// AudioCtrl-Setup) — фиксированное значение по умолчанию у SoftAP на ESP32, никогда не
+// приходит по UART (ESP32 шлёт IP: только когда подключена к настоящей сети, см.
+// megaLinkSendIp() в wifi_setup.cpp того репозитория) — только поэтому здесь строковая
+// константа, а не runtime-состояние
+#define ESP32_SETUP_IP_STRING "192.168.4.1"
+
+// --- Экран "сейчас играет" (Now Playing) — полноэкранный, как Mute, показывается пока
+// Arylic реально играет (PLAY:1 от ESP32, см. esp32_link.h). Enter/клик энкодера временно
+// впускает в обычное меню — если там NOW_PLAYING_MENU_IDLE_TIMEOUT_MS не было никакой
+// активности, автоматически возвращает обратно на этот экран (см. main.cpp) ---
+#define NOW_PLAYING_MENU_IDLE_TIMEOUT_MS 5000
+#define NOW_PLAYING_TITLE_FONT u8g2_font_ncenB08_tr
+#define NOW_PLAYING_TITLE_X 4
+#define NOW_PLAYING_TITLE_Y 16
+#define NOW_PLAYING_TITLE_MAX_CHARS 20 // Грубое усечение под ширину экрана этим шрифтом — без переноса строк
+#define NOW_PLAYING_STATUS_FONT u8g2_font_ncenB08_tr
+#define NOW_PLAYING_STATUS_X 4
+#define NOW_PLAYING_STATUS_Y 38
+#define NOW_PLAYING_SOURCE_Y 52
 
 // ============================================================================
 // NeoPixel-кольца вокруг ручек Bass/High/Volume

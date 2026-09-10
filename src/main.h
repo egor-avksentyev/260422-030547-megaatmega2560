@@ -65,3 +65,29 @@ void resetCursor();
 void saveSettings();
 void loadSettings();
 void blinkLED(int pin);
+
+// Полноэкранный "Now Playing" (см. esp32_link.h, hardware_settings.h) — показывается, пока
+// Arylic реально играет (PLAY:1 от ESP32). true, только пока показывается САМ полноэкранный
+// экран — как только пользователь нажал Enter/клик энкодера, экран сменился на обычное меню
+// (см. nowPlayingMenuVisitActive ниже), но nowPlayingActive остаётся true — источник до сих
+// пор играет, просто пользователь временно смотрит меню. Переключается на false только
+// когда воспроизведение реально остановилось (main.cpp, updateNowPlaying())
+extern bool nowPlayingActive;
+
+// true, если пользователь зашёл в обычное меню С экрана Now Playing (Enter/клик энкодера,
+// см. exitNowPlayingToMenu()) — самим этим фактом обычная навигация временно разрешена
+// (см. gate в remote_control.cpp/encoder.cpp), и запущен таймер простоя: если за
+// NOW_PLAYING_MENU_IDLE_TIMEOUT_MS никакой активности — main.cpp сам вернёт обратно на
+// Now Playing (см. refreshNowPlayingMenuActivity())
+extern bool nowPlayingMenuVisitActive;
+
+// Enter/клик энкодера с экрана Now Playing — переходит в обычную карусель меню и заводит
+// таймер простоя (см. nowPlayingMenuVisitActive выше). Не трогает currentMenuItem — куда
+// попадёт пользователь, туда он и попадёт, как обычно, с той же самой точки, что и был бы
+// на карусели без Now Playing
+void exitNowPlayingToMenu();
+
+// Сбрасывает таймер простоя, пока идёт "визит" в меню с экрана Now Playing — вызывать на
+// любое пользовательское действие (ИК-команда, вращение/клик энкодера), пока
+// nowPlayingMenuVisitActive. Ничего не делает, если сейчас не тот случай
+void refreshNowPlayingMenuActivity();

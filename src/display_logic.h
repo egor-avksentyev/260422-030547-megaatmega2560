@@ -36,6 +36,10 @@ void drawColorScreen(int colorIndex);
 void drawSourceScreen(int sourceIndex);
 void drawEqScreen(int eqIndex);
 void drawInfoScreen();
+// Полноэкранный "сейчас играет" — артист/трек (esp32_link.h), статус воспроизведения и
+// источник (всегда "Streamer" — только это и переключает его на экран, см. main.cpp,
+// updateNowPlaying()). Как и другие полноэкранные режимы (Mute) — сама очищает буфер
+void drawNowPlayingScreen();
 void displayMessage(const char* message);
 // Применяет displayBrightness (main.h, пункт "Dimmer", вторая строка) как реальный
 // контраст OLED-дисплея (0-100% -> u8g2.setContrast(0-255))

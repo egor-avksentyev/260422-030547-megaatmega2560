@@ -108,6 +108,15 @@ void handleRemoteInput() {
       return;
     }
 
+    // Пока показан полноэкранный Now Playing (см. main.h/esp32_link.h) — тот же принцип, что
+    // у Mute выше: не бороться за экран с этим режимом. Enter — единственная кнопка, которая
+    // из него выпускает (см. case IR_ENTER ниже); Power/Mute продолжают работать всегда
+    if (nowPlayingActive && !nowPlayingMenuVisitActive
+        && irCommand != IR_ENTER && irCommand != IR_MUTE && irCommand != IR_POWER) {
+      return;
+    }
+    refreshNowPlayingMenuActivity(); // Любая прошедшая сюда команда — активность в "визите" из Now Playing
+
     // Общий антидребезг для Right/Left — теперь через них проходят и repeat-кадры (см.
     // комментарий выше), нужно отличить настоящее удержание (кадры каждые ~114мс) от
     // одного осознанного нажатия. 200мс — тот же порядок, что у Enter/Mute/Set ниже
@@ -206,7 +215,11 @@ void handleRemoteInput() {
         if (millis() - lastEnterActionTime > 200) {
           lastEnterActionTime = millis();
           Serial.println("Enter button pressed"); // Отладочный вывод
-          if (!inSettingsMode) {
+          if (nowPlayingActive && !nowPlayingMenuVisitActive) {
+            // Средняя кнопка с полноэкранного Now Playing — переход в обычную карусель
+            // (см. main.h) вместо обычного toggle inSettingsMode ниже
+            exitNowPlayingToMenu();
+          } else if (!inSettingsMode) {
             inSettingsMode = true;
             if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
               drawToggleSwitch(settings[currentMenuItem] == 1);
@@ -267,8 +280,11 @@ void handleRemoteInput() {
             drainPendingRc5Frame();
             // Надпись "mute" рисуется на всех экранах (см. drawStatusIndicators() в
             // display_logic.cpp) — перерисовываем ТЕКУЩИЙ экран (не всегда drawMenu(), иначе
-            // это скачок в карусель меню и обратно)
-            if (!inSettingsMode) {
+            // это скачок в карусель меню и обратно). Now Playing, если ещё активен и его не
+            // покидали через Enter — тоже "текущий экран" в этом смысле, см. main.h
+            if (nowPlayingActive && !nowPlayingMenuVisitActive) {
+              drawNowPlayingScreen();
+            } else if (!inSettingsMode) {
               drawMenu();
             } else if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
               drawToggleSwitch(settings[currentMenuItem] == 1);
@@ -327,6 +343,11 @@ void handleRemoteInput() {
             settings[currentMenuItem] = (settings[currentMenuItem] - 1 + EQ_COUNT) % EQ_COUNT;
             applyEqPreset(settings[currentMenuItem]);
             drawEqScreen(settings[currentMenuItem]);
+          } else if (menuItems[currentMenuItem] == "Info") {
+            // Info — прокручиваемый список (drawInfoScreen()), зажатый, не по кругу —
+            // см. hardware_settings.h, INFO_ROW_COUNT/INFO_LIST_VISIBLE_ROWS
+            settings[currentMenuItem] = constrain(settings[currentMenuItem] - 1, 0, INFO_ROW_COUNT - INFO_LIST_VISIBLE_ROWS);
+            drawInfoScreen();
           }
         } else {
           // На карусели (не в настройках) Up/Down крутят Volume прямо отсюда, без захода
@@ -370,6 +391,10 @@ void handleRemoteInput() {
             settings[currentMenuItem] = (settings[currentMenuItem] + 1) % EQ_COUNT;
             applyEqPreset(settings[currentMenuItem]);
             drawEqScreen(settings[currentMenuItem]);
+          } else if (menuItems[currentMenuItem] == "Info") {
+            // Down — прокручивает список вниз, симметрично IR_UP
+            settings[currentMenuItem] = constrain(settings[currentMenuItem] + 1, 0, INFO_ROW_COUNT - INFO_LIST_VISIBLE_ROWS);
+            drawInfoScreen();
           }
         } else {
           beginVolumeOverlay();

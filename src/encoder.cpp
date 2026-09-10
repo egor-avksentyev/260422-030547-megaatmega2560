@@ -44,6 +44,17 @@ void checkEncoderButton() {
   if (isPressed && !wasPressed) {
     // Свежее нажатие
     unsigned long currentTime = millis();
+
+    if (nowPlayingActive && !nowPlayingMenuVisitActive) {
+      // Клик с полноэкранного Now Playing — переход в обычную карусель (см. main.h),
+      // вместо обычного toggle inSettingsMode ниже. Симметрично IR_ENTER в remote_control.cpp
+      exitNowPlayingToMenu();
+      lastButtonPressTime = currentTime;
+      wasPressed = isPressed;
+      return;
+    }
+    refreshNowPlayingMenuActivity(); // Клик внутри уже начатого "визита" в меню — тоже активность
+
     pressStartTime = currentTime;
     longPressHandled = false;
     pressStartedInDimmer = inSettingsMode && menuItems[currentMenuItem] == "Dimmer";

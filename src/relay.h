@@ -11,3 +11,9 @@
 void applySourceSelection();
 void applyBypassState();
 void checkBypassButton();
+
+// Индекс "STREAMER" в sourceNames[]/settings[sourceMenuIndex()] (hardware_settings.h) — по
+// имени, не захардкожен на позицию, тем же приёмом, что dimmerMenuIndex()/colorMenuIndex()
+// и т.п. в main.cpp. Используется автопереключением источника при начале воспроизведения на
+// Arylic (см. main.cpp, updateNowPlaying())
+int streamerSourceIndex();
