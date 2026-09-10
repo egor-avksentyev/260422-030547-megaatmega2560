@@ -169,7 +169,7 @@ void updateBassHighRecenter() {
       bassSeeking = false;
     } else {
       // Если крутит в обратную сторону — поменяй знак здесь
-      motorControl(raw > bassSeekTargetRaw ? -SLIDER_MOTOR_SPEED : SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
+      motorControl(raw > bassSeekTargetRaw ? -MOTOR_SEEK_SPEED : MOTOR_SEEK_SPEED, MOTOR1_IN, MOTOR1_PWM);
       lastMotorInputTime = millis();
     }
   }
@@ -182,7 +182,7 @@ void updateBassHighRecenter() {
       highSeeking = false;
     } else {
       // Если крутит в обратную сторону — поменяй знак здесь
-      motorControl(raw > highSeekTargetRaw ? -SLIDER_MOTOR_SPEED : SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
+      motorControl(raw > highSeekTargetRaw ? -MOTOR_SEEK_SPEED : MOTOR_SEEK_SPEED, MOTOR2_IN, MOTOR2_PWM);
       lastMotorInputTime = millis();
     }
   }
@@ -208,7 +208,7 @@ void updateVolumeSeek() {
     volumeSeeking = false;
   } else {
     // Если крутит в обратную сторону — поменяй знак здесь
-    int dir = percent > volumeSeekTargetPercent ? -SLIDER_MOTOR_SPEED : SLIDER_MOTOR_SPEED;
+    int dir = percent > volumeSeekTargetPercent ? -MOTOR_SEEK_SPEED : MOTOR_SEEK_SPEED;
     motorControl2(dir, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
     lastMotorInputTime = millis();
   }
@@ -266,7 +266,7 @@ void seekBassHighVolumeToZeroBlocking() {
   // физического нуля. Слепой доворот без сверки с потенциометром — единственный способ
   // гарантированно дойти до упора, раз обратная связь тут ничего не показывает
   if (readVolumePotPercent() <= VOLUME_ZERO_DEADZONE_PERCENT) {
-    motorControl2(-SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
+    motorControl2(-MOTOR_SEEK_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
     unsigned long blindStart = millis();
     while (millis() - blindStart < VOLUME_ZERO_BLIND_PUSH_MS) {
       renderShutdownRings();
