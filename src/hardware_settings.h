@@ -9,8 +9,15 @@
 
 #include <Arduino.h>
 
-// --- Дисплей (SSD1306, аппаратный SPI). SCK/MOSI — фиксированные пины SPI на
-// Mega (52/51), их сменить нельзя; CS/DC/RESET — любые свободные цифровые пины ---
+// --- Дисплей (аппаратный SPI). SCK/MOSI — фиксированные пины SPI на Mega (52/51), их
+// сменить нельзя; CS/DC/RESET — любые свободные цифровые пины ---
+//
+// Какой контроллер физически стоит сейчас — раскомментируй ОДНУ строку, остальные закомментируй
+// (см. display_logic.h/.cpp — там объект u8g2 объявлен/создан под этот же #define).
+// #define DISPLAY_DRIVER_SH1106 // 1.3", 128x64
+#define DISPLAY_DRIVER_SSD1306 // Текущий экран — 0.96", 128x64
+// #define DISPLAY_DRIVER_SSD1309 // Прежний экран — 2.42", 128x64 (сгорел)
+
 #define DISPLAY_CS_PIN 10
 #define DISPLAY_DC_PIN 9
 #define DISPLAY_RESET_PIN 12

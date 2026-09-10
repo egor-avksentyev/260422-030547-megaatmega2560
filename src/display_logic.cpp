@@ -15,7 +15,14 @@
 #include "temperature_sensor.h"
 #include "voltage_sensor.h"
 
+// Тип переключается вместе с DISPLAY_DRIVER_* (hardware_settings.h) — см. display_logic.h
+#ifdef DISPLAY_DRIVER_SH1106
+U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
+#elif defined(DISPLAY_DRIVER_SSD1306)
+U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
+#elif defined(DISPLAY_DRIVER_SSD1309)
 U8G2_SSD1309_128X64_NONAME2_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ DISPLAY_CS_PIN, /* dc=*/ DISPLAY_DC_PIN, /* reset=*/ DISPLAY_RESET_PIN);
+#endif
 
 // Надпись "bypass" в углу экрана — нужна на ВСЕХ экранах (не только карусели меню),
 // иначе при переключении Bypass из настроек конкретного пункта не видно подтверждения,
