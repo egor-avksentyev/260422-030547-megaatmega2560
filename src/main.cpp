@@ -365,10 +365,21 @@ void setup() {
 void loop() {
   handleRemoteInput(); // Проверяет сигнал с ИК-пульта сама (rc5IcuGetFrame(), см. rc5_icu.h)
 
-  // Приём от ESP32-компаньона (esp32_link.h) — как и остальной фон, не имеет смысла, пока
-  // система выключена (реле/дисплей всё равно обесточены)
-  if (!powerOff) {
-    esp32LinkPoll();
+  // Приём от ESP32-компаньона (esp32_link.h) — в отличие от остального фона, нужен ДАЖЕ в
+  // Standby: иначе Mega не узнает, что Arylic начал играть, и не сможет сама включиться
+  // (см. ниже). Сам updateNowPlaying() (переключение Source/показ Now Playing) по-прежнему
+  // имеет смысл только пока система включена — реле/дисплей обесточены в Standby
+  esp32LinkPoll();
+  if (powerOff) {
+    if (esp32LinkIsPlaying()) {
+      // Arylic начал играть, пока система была в Standby — включаемся тем же путём, что и
+      // ручной Power с пульта (см. IR_POWER в remote_control.cpp). updateNowPlaying() сама
+      // подхватит уже true playingNow на следующей же итерации (теперь !powerOff) и сделает
+      // переключение на Streamer + покажет Now Playing — здесь только само включение
+      powerOnDevices();
+      powerOff = false;
+    }
+  } else {
     updateNowPlaying();
   }
 
