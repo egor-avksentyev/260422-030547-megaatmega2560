@@ -700,11 +700,19 @@ void loop() {
   // Гасим оверлей положения, если рукой перестали крутить — вне тика выше, чтобы
   // 1-секундный таймаут срабатывал точно. В отличие от компактного варианта, экран сейчас
   // занят ПОЛНОЙ настройкой (drawArrowIndicator()), а не иконкой карусели — просто перестать
-  // его трогать недостаточно, нужно явно вернуть currentMenuItem и перерисовать карусель
+  // его трогать недостаточно, нужно явно вернуть currentMenuItem и перерисовать то, что было
+  // видно ДО того, как рука взялась за ручку — обычно карусель, но если рукой крутили прямо
+  // поверх полноэкранного Now Playing (см. main.h/esp32_link.h), вернуться нужно туда же, а
+  // не в карусель — иначе после того, как ручку отпустили, экран навсегда "застревал" бы на
+  // карусели, хотя источник всё ещё Streamer и играет
   if (knobIndicatorActiveItem != -1 && millis() - knobIndicatorLastMovementTime >= KNOB_OVERLAY_IDLE_TIMEOUT_MS) {
     knobIndicatorActiveItem = -1;
     currentMenuItem = knobOverlaySavedMenuItem;
-    drawMenu();
+    if (nowPlayingActive && !nowPlayingMenuVisitActive) {
+      drawNowPlayingScreen();
+    } else {
+      drawMenu();
+    }
   }
 
   // Во время анимации мигания (возврат в 0dB, дыхание Volume выше середины шкалы)
