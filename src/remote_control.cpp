@@ -232,6 +232,7 @@ void handleRemoteInput() {
             } else if (menuItems[currentMenuItem] == "EQ") {
               drawEqScreen(settings[currentMenuItem]);
             } else if (menuItems[currentMenuItem] == "Info") {
+              infoRowLocked = false; // Каждый новый вход в Info начинается с выбора строки (см. main.h)
               drawInfoScreen();
             } else {
               drawArrowIndicator(settings[currentMenuItem], false, false);

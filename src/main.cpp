@@ -34,6 +34,7 @@ int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT,
 bool inSettingsMode = false;
 bool isMuted = false; // Флаг для состояния Mute
 bool streamerRelayOn = false; // Реле Streamer (строка "Streamer" в Info) — см. main.h
+bool infoRowLocked = false; // Выбор строки <-> переключение Streamer энкодером внутри Info — см. main.h
 unsigned long lastMotorInputTime = 0; // Момент последней команды на мотор Bass/High/Volume (для авто-стопа)
 int displayBrightness = DISPLAY_BRIGHTNESS_DEFAULT_PERCENT; // Яркость дисплея, пункт "Dimmer"
 bool dimmerEditingDisplay = false; // Какая строка внутри Dimmer сейчас активна (false = кольца)
@@ -413,11 +414,19 @@ void loop() {
           applyEqPreset(settings[currentMenuItem]);
           drawEqScreen(settings[currentMenuItem]);
         } else if (menuItems[currentMenuItem] == "Info") {
-          // Список строк (AC/температуры/Streamer, см. drawInfoScreen()) — вращение
-          // просто двигает курсор по кругу, ничего не применяет само по себе (в отличие
-          // от Source/EQ выше, где значение применяется сразу). Toggle строки Streamer —
-          // только с пульта (IR_LEFT/IR_RIGHT, remote_control.cpp), энкодер этого не делает
-          settings[currentMenuItem] = ((settings[currentMenuItem] + direction) % INFO_ROW_COUNT + INFO_ROW_COUNT) % INFO_ROW_COUNT;
+          // Список строк (температуры/Streamer, см. drawInfoScreen()) — тот же приём
+          // двухуровневой навигации, что у Dimmer (dimmerRowLocked): пока !infoRowLocked,
+          // вращение просто двигает курсор по кругу, ничего не применяя. После короткого
+          // клика (infoRowLocked, см. checkEncoderButton()) вращение переключает Streamer —
+          // но только если курсор стоит именно на его строке, на остальных строках это
+          // просто нечего переключать. Пульт (Left/Right/Up/Down) на этот флаг не смотрит —
+          // там Left/Right сразу переключают Streamer, независимо от состояния энкодера
+          if (!infoRowLocked) {
+            settings[currentMenuItem] = ((settings[currentMenuItem] + direction) % INFO_ROW_COUNT + INFO_ROW_COUNT) % INFO_ROW_COUNT;
+          } else if (settings[currentMenuItem] == INFO_STREAMER_ROW_INDEX) {
+            streamerRelayOn = (direction > 0);
+            applyStreamerRelay();
+          }
           encoderValue = 0;
           drawInfoScreen();
         }
