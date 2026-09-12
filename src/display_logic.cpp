@@ -581,6 +581,17 @@ void drawNowPlayingScreen() {
   u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_TITLE_Y);
   u8g2.print(truncated[0] ? truncated : "...");
 
+  // Источник воспроизведения (Spotify/AirPlay/...) — независимая от текста трека строка:
+  // AirPlay на этом устройстве не отдаёт Artist/Title вообще (см. project_arylic_airplay_
+  // no_metadata в памяти), но источник знать можно всегда, пока он распознан (см.
+  // esp32LinkStreamingSource() — пусто, если нет)
+  const char* source = esp32LinkStreamingSource();
+  if (source[0]) {
+    u8g2.setFont(NOW_PLAYING_SERVICE_FONT);
+    u8g2.setCursor(NOW_PLAYING_SERVICE_X, NOW_PLAYING_SERVICE_Y);
+    u8g2.print(source);
+  }
+
   u8g2.setFont(NOW_PLAYING_STATUS_FONT);
   u8g2.setCursor(NOW_PLAYING_STATUS_X, NOW_PLAYING_STATUS_Y);
   u8g2.print("Playing");

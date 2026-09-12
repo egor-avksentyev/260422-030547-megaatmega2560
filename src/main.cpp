@@ -90,6 +90,7 @@ void refreshNowPlayingMenuActivity() {
 static void updateNowPlaying() {
   static bool wasPlaying = false;
   static char lastRenderedText[ESP32_LINK_META_MAX_LEN + 1] = "";
+  static char lastRenderedSource[ESP32_LINK_SOURCE_MAX_LEN + 1] = "";
 
   bool playingNow = esp32LinkIsPlaying();
 
@@ -102,6 +103,7 @@ static void updateNowPlaying() {
     nowPlayingActive = true;
     nowPlayingMenuVisitActive = false;
     lastRenderedText[0] = '\0'; // форсируем перерисовку блоком ниже на этом же тике
+    lastRenderedSource[0] = '\0';
   } else if (!playingNow && wasPlaying) {
     // Нисходящий фронт: пауза/стоп — возвращаем прежнее состояние реле Streamer и уходим в
     // обычную карусель, независимо от того, был показан полноэкранный Now Playing или
@@ -118,9 +120,16 @@ static void updateNowPlaying() {
   wasPlaying = playingNow;
 
   if (nowPlayingActive && !nowPlayingMenuVisitActive && !isMuted) {
-    if (strcmp(esp32LinkNowPlayingText(), lastRenderedText) != 0) {
+    // Источник (Spotify/AirPlay/...) сравнивается отдельно от текста трека — на AirPlay текст
+    // всегда пуст (см. project_arylic_airplay_no_metadata в памяти), так что смена источника
+    // без смены текста иначе осталась бы незамеченной и экран не перерисовался бы
+    bool textChanged = strcmp(esp32LinkNowPlayingText(), lastRenderedText) != 0;
+    bool sourceChanged = strcmp(esp32LinkStreamingSource(), lastRenderedSource) != 0;
+    if (textChanged || sourceChanged) {
       strncpy(lastRenderedText, esp32LinkNowPlayingText(), sizeof(lastRenderedText) - 1);
       lastRenderedText[sizeof(lastRenderedText) - 1] = '\0';
+      strncpy(lastRenderedSource, esp32LinkStreamingSource(), sizeof(lastRenderedSource) - 1);
+      lastRenderedSource[sizeof(lastRenderedSource) - 1] = '\0';
       drawNowPlayingScreen();
     }
   }

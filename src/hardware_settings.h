@@ -377,6 +377,7 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 // требует указывать пины у HardwareSerial — они фиксированы аппаратно ---
 #define ESP32_LINK_BAUD 115200
 #define ESP32_LINK_META_MAX_LEN 40 // Должно совпадать с MEGA_LINK_META_MAX_LEN в config.h ESP32-проекта
+#define ESP32_LINK_SOURCE_MAX_LEN 20 // Источник воспроизведения ("Spotify"/"AirPlay"/...) — короче META, однострочная подпись
 // IP, который ESP32 показывает САМ СЕБЕ на время настройки Wi-Fi (своя точка доступа
 // AudioCtrl-Setup) — фиксированное значение по умолчанию у SoftAP на ESP32, никогда не
 // приходит по UART (ESP32 шлёт IP: только когда подключена к настоящей сети, см.
@@ -397,6 +398,13 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define NOW_PLAYING_STATUS_X 4
 #define NOW_PLAYING_STATUS_Y 38
 #define NOW_PLAYING_SOURCE_Y 52
+// Источник воспроизведения (Spotify/AirPlay/DLNA/...; SRC: от ESP32, см. esp32_link.h) — не
+// путать с NOW_PLAYING_SOURCE_Y выше, та подпись про физическое реле ("Source: Streamer"),
+// эта — про то, какой стриминг-протокол сейчас играет через Arylic. Между заголовком (y=16)
+// и статусом (y=38) есть место — сюда
+#define NOW_PLAYING_SERVICE_FONT u8g2_font_ncenB08_tr
+#define NOW_PLAYING_SERVICE_X 4
+#define NOW_PLAYING_SERVICE_Y 27
 
 // ============================================================================
 // NeoPixel-кольца вокруг ручек Bass/High/Volume

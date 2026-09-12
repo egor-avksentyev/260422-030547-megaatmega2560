@@ -18,6 +18,10 @@
 //   PLAY:0 / PLAY:1 — играет ли Arylic прямо сейчас (используется для авто-переключения
 //                    Source на Streamer и для полноэкранного "Now Playing", см. main.cpp)
 //   ARYLIC:OK / ARYLIC:FAIL — видит ли ESP32 Arylic по сети (для экрана Info)
+//   SRC:<name>     — источник воспроизведения ("Spotify"/"AirPlay"/... или пусто, см.
+//                    computeSourceName() в arylic_metadata.cpp того репозитория) — НЕ то же
+//                    самое, что пункт меню "Source" на самой Mega (тот про физическое реле
+//                    AUX/CD/DAT/Streamer); показывается на экране Now Playing
 // ============================================================================
 
 #include <Arduino.h>
@@ -33,6 +37,12 @@ bool esp32LinkIsPlaying();
 // "Artist - Title" (или пусто, если META ещё не приходила) — валидно смотреть только пока
 // esp32LinkIsPlaying() истинно, содержимое не чистится при остановке воспроизведения
 const char* esp32LinkNowPlayingText();
+
+// "Spotify"/"AirPlay"/... (или пусто, источник не распознан/ещё не приходил SRC:) — та же
+// оговорка о валидности, что у esp32LinkNowPlayingText() выше: смотреть только пока
+// esp32LinkIsPlaying() истинно. Не путать с пунктом меню "Source" (settings[] на Mega) —
+// это про стриминг-протокол внутри Arylic, а не про физическое реле AUX/CD/DAT/Streamer
+const char* esp32LinkStreamingSource();
 
 // "" пока ESP32 ни разу не прислал свой IP (например ещё не подключился к сети)
 const char* esp32LinkControlIp();

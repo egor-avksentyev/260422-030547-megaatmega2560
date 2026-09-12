@@ -16,6 +16,7 @@ static char lineBuf[64];
 static uint8_t lineLen = 0;
 
 static char nowPlayingText[ESP32_LINK_META_MAX_LEN + 1] = "";
+static char streamingSource[ESP32_LINK_SOURCE_MAX_LEN + 1] = "";
 static char controlIp[16] = ""; // "255.255.255.255\0" — максимум для IPv4-строки
 static bool playing = false;
 static bool arylicKnown = false;
@@ -320,6 +321,9 @@ static void handleLine(char* line) {
   } else if (strncmp(line, "ARYLIC:", 7) == 0) {
     arylicKnown = true;
     arylicOk = (strcmp(line + 7, "OK") == 0);
+  } else if (strncmp(line, "SRC:", 4) == 0) {
+    strncpy(streamingSource, line + 4, ESP32_LINK_SOURCE_MAX_LEN);
+    streamingSource[ESP32_LINK_SOURCE_MAX_LEN] = '\0';
   } else if (strncmp(line, "CMD:", 4) == 0 && line[4] != '\0') {
     executeWebCommand(line[4]);
   }
@@ -357,6 +361,10 @@ bool esp32LinkIsPlaying() {
 
 const char* esp32LinkNowPlayingText() {
   return nowPlayingText;
+}
+
+const char* esp32LinkStreamingSource() {
+  return streamingSource;
 }
 
 const char* esp32LinkControlIp() {
