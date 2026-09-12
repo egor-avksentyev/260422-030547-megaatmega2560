@@ -223,13 +223,9 @@ void powerOffDevices() {
   inSettingsMode = false;
   resetCursor();
 
-  // Явно гасим светодиоды (LOW = выключено)
   pinMode(LED_BASS_PIN, OUTPUT);
   pinMode(LED_HIGH_PIN, OUTPUT);
   pinMode(LED_VOLUME_PIN, OUTPUT);
-  digitalWrite(LED_BASS_PIN, LOW);
-  digitalWrite(LED_HIGH_PIN, LOW);
-  digitalWrite(LED_VOLUME_PIN, LOW);
 
   // Явно размыкаем все реле (LOW = выключено при активной по HIGH логике)
   pinMode(RELAY_PIN_STANDBY, OUTPUT);
@@ -253,6 +249,13 @@ void powerOffDevices() {
   cancelVolumeSeek();
   delay(100); // Небольшая задержка для гарантированного отключения
   u8g2.setPowerSave(1); // Выключаем дисплей
+
+  // Светодиоды Bass/High/Volume гасим ЗДЕСЬ, рядом с кольцами (не раньше, в начале функции)
+  // — чтобы оба типа индикации гасли в один и тот же момент, а не с заметным на глаз
+  // разрывом в добрую сотню мс (задержка выше + остановка моторов между ними)
+  digitalWrite(LED_BASS_PIN, LOW);
+  digitalWrite(LED_HIGH_PIN, LOW);
+  digitalWrite(LED_VOLUME_PIN, LOW);
   volumeRing.clear(); // Гасим кольца Volume/Bass/High
   volumeRing.show();
   bassRing.clear();
