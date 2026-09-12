@@ -281,6 +281,10 @@ const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT"};
 #define LED_BASS_PIN 39
 #define LED_HIGH_PIN 41
 #define LED_VOLUME_PIN 43
+// При выключении питания (powerOffDevices(), on_off_logic.cpp) эти три светодиода
+// специально гаснут ПОСЛЕДНИМИ — после того, как реле/кольца/дисплей уже отключены,
+// выдерживается эта пауза, и только потом гаснут они
+#define MENU_LED_SHUTDOWN_DELAY_MS 3000
 
 // --- Физическая кнопка Bypass (кнопка на GND, INPUT_PULLUP): каждое нажатие
 // переключает Bypass в противоположное состояние (не привязана к физическому

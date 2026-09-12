@@ -250,18 +250,21 @@ void powerOffDevices() {
   delay(100); // Небольшая задержка для гарантированного отключения
   u8g2.setPowerSave(1); // Выключаем дисплей
 
-  // Светодиоды Bass/High/Volume гасим ЗДЕСЬ, рядом с кольцами (не раньше, в начале функции)
-  // — чтобы оба типа индикации гасли в один и тот же момент, а не с заметным на глаз
-  // разрывом в добрую сотню мс (задержка выше + остановка моторов между ними)
-  digitalWrite(LED_BASS_PIN, LOW);
-  digitalWrite(LED_HIGH_PIN, LOW);
-  digitalWrite(LED_VOLUME_PIN, LOW);
   volumeRing.clear(); // Гасим кольца Volume/Bass/High
   volumeRing.show();
   bassRing.clear();
   bassRing.show();
   highRing.clear();
   highRing.show();
+
+  // Светодиоды Bass/High/Volume — специально ПОСЛЕДНИЕ, кто гаснет, а не вместе со всем
+  // остальным выше. К этому моменту реле/кольца/дисплей уже выключены — то есть система
+  // визуально "полностью потухла", и только после этого, с задержкой
+  // MENU_LED_SHUTDOWN_DELAY_MS, гаснут и они
+  delay(MENU_LED_SHUTDOWN_DELAY_MS);
+  digitalWrite(LED_BASS_PIN, LOW);
+  digitalWrite(LED_HIGH_PIN, LOW);
+  digitalWrite(LED_VOLUME_PIN, LOW);
 }
 
 void powerOnDevices() {
