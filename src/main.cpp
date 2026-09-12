@@ -427,19 +427,25 @@ void loop() {
 
   // Обновление светодиодов в режиме настройки (или во время временного показа Volume
   // с карусели через Up/Down — см. volumeOverlayActive, или во время ручного вращения
-  // Bass/High/Volume рукой — см. knobIndicatorActiveItem)
-  if (inSettingsMode || volumeOverlayActive || knobIndicatorActiveItem != -1) {
-    if (menuItems[currentMenuItem] == "Bass") {
-      blinkLED(LED_BASS_PIN);
-    } else if (menuItems[currentMenuItem] == "High") {
-      blinkLED(LED_HIGH_PIN);
-    } else if (menuItems[currentMenuItem] == "Volume") {
-      blinkLED(LED_VOLUME_PIN);
+  // Bass/High/Volume рукой — см. knobIndicatorActiveItem). Раньше этот блок не проверял
+  // powerOff — powerOffDevices() гасил светодиоды (LOW), но уже на следующей итерации
+  // loop() этот же блок (ветка "иначе") тут же зажигал их обратно (HIGH), т.к.
+  // inSettingsMode/оверлеи к этому моменту уже false. Теперь блок целиком пропускается
+  // в Standby, погашенное состояние остаётся как есть
+  if (!powerOff) {
+    if (inSettingsMode || volumeOverlayActive || knobIndicatorActiveItem != -1) {
+      if (menuItems[currentMenuItem] == "Bass") {
+        blinkLED(LED_BASS_PIN);
+      } else if (menuItems[currentMenuItem] == "High") {
+        blinkLED(LED_HIGH_PIN);
+      } else if (menuItems[currentMenuItem] == "Volume") {
+        blinkLED(LED_VOLUME_PIN);
+      }
+    } else {
+      digitalWrite(LED_BASS_PIN, HIGH);
+      digitalWrite(LED_HIGH_PIN, HIGH);
+      digitalWrite(LED_VOLUME_PIN, HIGH);
     }
-  } else {
-    digitalWrite(LED_BASS_PIN, HIGH);
-    digitalWrite(LED_HIGH_PIN, HIGH);
-    digitalWrite(LED_VOLUME_PIN, HIGH);
   }
 
   // Крутящаяся иконка пункта меню в углу drawMenu(), пока пользователь сидит на карусели
