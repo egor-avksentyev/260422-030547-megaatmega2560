@@ -65,3 +65,11 @@ void resetCursor();
 void saveSettings();
 void loadSettings();
 void blinkLED(int pin);
+
+// Реле Streamer (relay.cpp, applyStreamerRelay()) — независимая строка "Streamer" внутри
+// пункта меню Info (не взаимоисключающая с Source, см. hardware_settings.h у
+// STREAMER_RELAY_PIN). Курсор внутри списка Info хранится как обычно в
+// settings[currentMenuItem] (тот же приём, что у Source/EQ) — своей переменной под него
+// не нужно, но само состояние реле не привязано ни к какому пункту menuItems[], поэтому
+// живёт отдельной глобальной переменной здесь, как isMuted
+extern bool streamerRelayOn;

@@ -14,6 +14,8 @@
 #include "animations/info_animation.h"
 #include "temperature_sensor.h"
 #include "voltage_sensor.h"
+#include <string.h>
+#include <stdio.h>
 
 // Тип переключается вместе с DISPLAY_DRIVER_* (hardware_settings.h) — см. display_logic.h
 #ifdef DISPLAY_DRIVER_SH1106
@@ -447,6 +449,27 @@ void drawEqScreen(int eqIndex) {
   u8g2.sendBuffer();
 }
 
+// Мини-переключатель для строки Streamer в Info — тот же визуальный язык, что у
+// полноэкранного drawToggleSwitch() (заполненная дорожка + "вырезанный" бегунок, когда
+// включено; пустая дорожка + закрашенный бегунок слева, когда выключено), только сильно
+// уменьшенный, чтобы влезть в одну строку списка (см. INFO_TOGGLE_*, hardware_settings.h)
+static void drawInlineToggle(int x, int y, bool state) {
+  int h = INFO_TOGGLE_HEIGHT;
+  int w = INFO_TOGGLE_WIDTH;
+  int radius = h / 2;
+  int knobRadius = radius - 1;
+  int knobY = y + radius;
+  u8g2.drawRFrame(x, y, w, h, radius);
+  if (state) {
+    u8g2.drawRBox(x, y, w, h, radius);
+    u8g2.setDrawColor(0);
+    u8g2.drawDisc(x + w - radius, knobY, knobRadius);
+    u8g2.setDrawColor(1);
+  } else {
+    u8g2.drawDisc(x + radius, knobY, knobRadius);
+  }
+}
+
 void drawInfoScreen() {
   waitForDisplayRedrawGap();
 
@@ -457,23 +480,9 @@ void drawInfoScreen() {
   u8g2.print(menuItems[currentMenuItem]);
   drawTitleUnderline(INFO_LABEL_X, INFO_LABEL_Y, "Info", INFO_LABEL_UNDERLINE_Y_OFFSET);
 
+  // Живые значения строк — считаются каждый раз заново, не кэшируются между кадрами
   float temps[3];
   readAllTemperatures(temps);
-
-  u8g2.setFont(INFO_ROW_FONT);
-  for (int i = 0; i < 3; i++) {
-    int y = INFO_LIST_Y_START + i * INFO_LIST_LINE_HEIGHT;
-    u8g2.setCursor(INFO_ROW_X, y);
-    u8g2.print(tempSensorLabels[i]);
-    u8g2.print(": ");
-    if (temps[i] == TEMP_SENSOR_INVALID) {
-      u8g2.print("--");
-    } else {
-      u8g2.print(temps[i], 1);
-      u8g2.print("C");
-    }
-  }
-
   int voltageRaw;
   int voltage = readMainsVoltage(&voltageRaw);
   // Для калибровки/подстройки подстроечника на модуле — крути его и подай известное
@@ -485,12 +494,46 @@ void drawInfoScreen() {
   Serial.print(voltage);
   Serial.println("V");
 
-  u8g2.setFont(INFO_VOLTAGE_FONT);
-  u8g2.setCursor(INFO_VOLTAGE_X, INFO_VOLTAGE_Y);
-  u8g2.print(INFO_VOLTAGE_LABEL);
-  u8g2.print(":");
-  u8g2.print(voltage);
-  u8g2.print("V");
+  // Как и у Dimmer (drawDimmerScreen()) — вся строка "label: value" одной готовой строкой,
+  // подсветка (drawHighlightedRow()) закрывает её целиком, не только label отдельно от
+  // value. Исключение — Streamer: там в строке только подпись, значение показывает
+  // отдельно нарисованный переключатель (drawInlineToggle()), а не текст
+  char rowText[INFO_ROW_COUNT][16];
+  snprintf(rowText[0], sizeof(rowText[0]), "%s: %dV", INFO_VOLTAGE_LABEL, voltage);
+  for (int i = 0; i < 3; i++) {
+    if (temps[i] == TEMP_SENSOR_INVALID) {
+      snprintf(rowText[1 + i], sizeof(rowText[0]), "%s: --", tempSensorLabels[i]);
+    } else {
+      // dtostrf(), не snprintf("%f"...) — avr-libc по умолчанию собран без поддержки
+      // float в *printf, dtostrf() всегда доступна и как раз для этого существует
+      char numBuf[8];
+      dtostrf(temps[i], 1, 1, numBuf);
+      snprintf(rowText[1 + i], sizeof(rowText[0]), "%s: %sC", tempSensorLabels[i], numBuf);
+    }
+  }
+  strcpy(rowText[INFO_STREAMER_ROW_INDEX], "Streamer");
+
+  // Курсор (settings[currentMenuItem]) двигает окно по кругу, центрируясь на выбранной
+  // строке — тот же приём windowStart, что у EQ (drawEqScreen()), т.к. все INFO_ROW_COUNT
+  // строк не помещаются разом
+  int cursor = settings[currentMenuItem];
+  int windowStart = cursor - (INFO_LIST_VISIBLE_ROWS - 1) / 2;
+  windowStart = constrain(windowStart, 0, max(0, INFO_ROW_COUNT - INFO_LIST_VISIBLE_ROWS));
+
+  u8g2.setFont(INFO_ROW_FONT);
+  for (int row = 0; row < INFO_LIST_VISIBLE_ROWS; row++) {
+    int i = windowStart + row;
+    if (i >= INFO_ROW_COUNT) {
+      break;
+    }
+    int y = INFO_LIST_Y_START + row * INFO_LIST_LINE_HEIGHT;
+    drawHighlightedRow(INFO_ROW_X, y, rowText[i], i == cursor,
+      INFO_ROW_HIGHLIGHT_PAD_X, INFO_ROW_HIGHLIGHT_PAD_Y, INFO_ROW_HIGHLIGHT_RADIUS,
+      INFO_ROW_DOT_RADIUS, INFO_ROW_DOT_X_OFFSET);
+    if (i == INFO_STREAMER_ROW_INDEX) {
+      drawInlineToggle(INFO_TOGGLE_X, y - u8g2.getAscent(), streamerRelayOn);
+    }
+  }
 
   drawStatusIndicators();
 

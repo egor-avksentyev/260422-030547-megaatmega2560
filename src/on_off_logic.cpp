@@ -185,6 +185,29 @@ static bool loadSavedEqState(int* eqIndexOut, bool* eqActiveOut) {
   return true;
 }
 
+// --- Долговременная память состояния реле Streamer (EEPROM) ---
+// Как Source/VU Meter выше — сохраняется ТОЛЬКО при выключении питания, восстанавливается
+// при следующем включении (см. powerOnDevices()). Раньше Streamer был частью
+// SavedSourceState (4-й вариант Source) — теперь независимое реле, свой собственный слот
+struct SavedStreamerState {
+  uint16_t magic;
+  uint8_t streamerOn;
+};
+#define SAVED_STREAMER_MAGIC 0x57EA
+
+void saveStreamerStateOnShutdown() {
+  SavedStreamerState data = {SAVED_STREAMER_MAGIC, (uint8_t)(streamerRelayOn ? 1 : 0)};
+  EEPROM.put(EEPROM_STREAMER_STATE_ADDR, data);
+}
+
+// false (выключено) для самого первого включения, пока в EEPROM ничего не записано —
+// тот же принцип по умолчанию, что у Bypass
+static bool loadSavedStreamerState() {
+  SavedStreamerState data;
+  EEPROM.get(EEPROM_STREAMER_STATE_ADDR, data);
+  return (data.magic == SAVED_STREAMER_MAGIC) && (data.streamerOn != 0);
+}
+
 void powerOffScreen() {
   playBootAnimation();
 }
@@ -220,7 +243,7 @@ void powerOffDevices() {
   digitalWrite(SOURCE_RELAY_1_PIN, LOW); // Гасим все реле источников — взаимоисключающий выбор на паузе
   digitalWrite(SOURCE_RELAY_2_PIN, LOW);
   digitalWrite(SOURCE_RELAY_3_PIN, LOW);
-  digitalWrite(SOURCE_RELAY_4_PIN, LOW);
+  digitalWrite(STREAMER_RELAY_PIN, LOW); // Независимое реле Streamer — тоже гасим при выключении
   digitalWrite(BYPASS_LED_PIN, LOW); // Гасим индикатор Bypass вместе со всем остальным
   bypassAnimMode = 0; // Прерываем анимацию колец, если она была активна на момент выключения
 
@@ -267,6 +290,9 @@ void powerOnDevices() {
     settings[sourceMenuIndex()] = savedSourceIndex; // Переживает настоящее отключение питания (не только Standby)
   }
   applySourceSelection();
+
+  streamerRelayOn = loadSavedStreamerState(); // Восстанавливаем реле Streamer, как было перед выключением
+  applyStreamerRelay();
 
   if (settings[4] == 1) {
     // Bypass восстановлен включённым — центр колец Bass/High должен быть красным (как при

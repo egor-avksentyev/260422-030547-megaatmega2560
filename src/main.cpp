@@ -30,9 +30,10 @@
 
 String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source", "EQ", "Info"};
 int currentMenuItem = 0;
-int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT, 0, 0, 0}; // VU Meter "включено", Bypass "выключено", Dimmer/Color колец, Source/EQ по умолчанию (EQ = Flat, индекс 0), Info не используется (нет редактируемого значения)
+int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT, 0, 0, 0}; // VU Meter "включено", Bypass "выключено", Dimmer/Color колец, Source/EQ по умолчанию (EQ = Flat, индекс 0), Info — курсор списка строк (см. drawInfoScreen())
 bool inSettingsMode = false;
 bool isMuted = false; // Флаг для состояния Mute
+bool streamerRelayOn = false; // Реле Streamer (строка "Streamer" в Info) — см. main.h
 unsigned long lastMotorInputTime = 0; // Момент последней команды на мотор Bass/High/Volume (для авто-стопа)
 int displayBrightness = DISPLAY_BRIGHTNESS_DEFAULT_PERCENT; // Яркость дисплея, пункт "Dimmer"
 bool dimmerEditingDisplay = false; // Какая строка внутри Dimmer сейчас активна (false = кольца)
@@ -266,7 +267,7 @@ void setup() {
   pinMode(SOURCE_RELAY_1_PIN, OUTPUT);
   pinMode(SOURCE_RELAY_2_PIN, OUTPUT);
   pinMode(SOURCE_RELAY_3_PIN, OUTPUT);
-  pinMode(SOURCE_RELAY_4_PIN, OUTPUT);
+  pinMode(STREAMER_RELAY_PIN, OUTPUT);
   pinMode(LED_BASS_PIN, OUTPUT);
   pinMode(LED_HIGH_PIN, OUTPUT);
   pinMode(LED_VOLUME_PIN, OUTPUT);
@@ -412,9 +413,13 @@ void loop() {
           applyEqPreset(settings[currentMenuItem]);
           drawEqScreen(settings[currentMenuItem]);
         } else if (menuItems[currentMenuItem] == "Info") {
-          // Нет редактируемого значения — просто гасим накопленное вращение, иначе
-          // encoderValue никогда не обнулится и утащит "хвост" в следующий пункт меню
+          // Список строк (AC/температуры/Streamer, см. drawInfoScreen()) — вращение
+          // просто двигает курсор по кругу, ничего не применяет само по себе (в отличие
+          // от Source/EQ выше, где значение применяется сразу). Toggle строки Streamer —
+          // только с пульта (IR_LEFT/IR_RIGHT, remote_control.cpp), энкодер этого не делает
+          settings[currentMenuItem] = ((settings[currentMenuItem] + direction) % INFO_ROW_COUNT + INFO_ROW_COUNT) % INFO_ROW_COUNT;
           encoderValue = 0;
+          drawInfoScreen();
         }
       }
     }

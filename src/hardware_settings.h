@@ -229,15 +229,19 @@
 #define RELAY_PIN_LED 26
 #define RELAY_PIN_MUTE 28
 // Реле переключения источника (пункт меню "Source") — взаимоисключающе, работает
-// только одно из четырёх одновременно
+// только одно из трёх одновременно
 #define SOURCE_RELAY_1_PIN 30
 #define SOURCE_RELAY_2_PIN 44
 #define SOURCE_RELAY_3_PIN 46
-#define SOURCE_RELAY_4_PIN 47
-#define SOURCE_COUNT 4
+#define SOURCE_COUNT 3
 // Названия источников для экрана (см. drawSourceScreen() в display_logic.cpp) — порядок
 // соответствует порядку переключения settings[7]/applySourceSelection() (relay.cpp)
-const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT", "STREAMER"};
+const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT"};
+// Раньше это было 4-е взаимоисключающее реле источника (STREAMER) — вынесено из Source
+// в отдельный независимый переключаемый пункт (строка "Streamer" в Info, см.
+// applyStreamerRelay() в relay.cpp и drawInfoScreen() в display_logic.cpp), не мешает
+// остальным трём источникам и может быть включён одновременно с любым из них
+#define STREAMER_RELAY_PIN 47
 // Сколько держится полноэкранный показ источника после нажатия Set на пульте (см.
 // beginSourceOverlay()/updateSourceOverlay() в main.cpp), прежде чем само вернуться туда,
 // где был экран до нажатия
@@ -320,21 +324,30 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define INFO_LABEL_X 25
 #define INFO_LABEL_Y 15
 #define INFO_LABEL_UNDERLINE_Y_OFFSET 3
-// Три строки температур — шрифт/позиция/шаг общие на все три (см. drawInfoScreen()
-// в display_logic.cpp: цикл i=0..2, Y = INFO_LIST_Y_START + i * INFO_LIST_LINE_HEIGHT)
+// Info — прокручиваемый список строк (Up/Down с пульта/энкодера, см. drawInfoScreen() в
+// display_logic.cpp): AC-напряжение, 3 температуры, Streamer (единственная togglable
+// строка — Left/Right с пульта переключает реле, см. STREAMER_RELAY_PIN выше). Курсор —
+// settings[currentMenuItem], тот же приём, что у Source/EQ, но по кругу и без применения
+// значения самим фактом перемещения курсора (сравни с Source/EQ, где движение курсора
+// само выбирает значение)
+#define INFO_ROW_COUNT 5
+#define INFO_STREAMER_ROW_INDEX 4 // Последняя строка — единственная, что реагирует на Left/Right
+#define INFO_LIST_VISIBLE_ROWS 3 // Все 5 строк не помещаются разом — окно вокруг курсора, как у EQ
 #define INFO_ROW_FONT u8g2_font_ncenB08_tr
 #define INFO_ROW_X 10
-#define INFO_LIST_Y_START 38 // Y (baseline) первой строки — ниже заголовка, чтобы не пересекались
-#define INFO_LIST_LINE_HEIGHT 12 // При 3 строках последняя на 62 — укладывается в экран высотой 64
-// Напряжение сети — отдельная строка со своим шрифтом/позицией, независимо от температур
-// выше (не участвует в цикле/шаге INFO_LIST_*, можно двигать и менять шрифт отдельно).
-// По умолчанию — справа от заголовка "Info" на той же высоте (там ещё есть место по
-// ширине), а не 4-й строкой снизу — три температуры и так занимают весь список до низа
-// экрана (38/50/62 при текущих INFO_LIST_*, см. выше)
-#define INFO_VOLTAGE_FONT u8g2_font_ncenB08_tr
-#define INFO_VOLTAGE_X 75
-#define INFO_VOLTAGE_Y 15
-#define INFO_VOLTAGE_LABEL "AC" // Подпись перед значением — поправь под то, что удобнее читать
+#define INFO_LIST_Y_START 38 // Y (baseline) первой ВИДИМОЙ строки — ниже заголовка, чтобы не пересекались
+#define INFO_LIST_LINE_HEIGHT 12 // При 3 видимых строках последняя на 62 — укладывается в экран высотой 64
+#define INFO_ROW_HIGHLIGHT_PAD_X 2 // Подсветка курсора — тот же приём (drawHighlightedRow()), что у Source/EQ
+#define INFO_ROW_HIGHLIGHT_PAD_Y 2
+#define INFO_ROW_HIGHLIGHT_RADIUS 3
+#define INFO_ROW_DOT_RADIUS 1
+#define INFO_ROW_DOT_X_OFFSET 6
+#define INFO_VOLTAGE_LABEL "AC" // Подпись строки напряжения сети — поправь под то, что удобнее читать
+// Мини-переключатель у строки Streamer — тот же визуальный язык, что у полноэкранного
+// drawToggleSwitch() (VU Meter/Bypass), но уменьшенный, чтобы влезть в одну строку списка
+#define INFO_TOGGLE_X 100 // Правый край строки — подписи слева ("Streamer") хватает места до этой X
+#define INFO_TOGGLE_WIDTH 20
+#define INFO_TOGGLE_HEIGHT 9
 
 // ============================================================================
 // NeoPixel-кольца вокруг ручек Bass/High/Volume
@@ -737,6 +750,7 @@ const EqPreset eqPresets[EQ_COUNT] = {
 #define EQ_LABEL_UNDERLINE_Y_OFFSET 3
 
 #define EEPROM_EQ_STATE_ADDR 40 // Следующий свободный слот после EEPROM_VU_METER_STATE_ADDR (32)
+#define EEPROM_STREAMER_STATE_ADDR 48 // Следующий свободный слот после EEPROM_EQ_STATE_ADDR (40)
 
 // --- Название текущего пункта меню (крупный текст по центру) на экране drawMenu() ---
 // _tr, а не _tf — пункты меню это обычный ASCII (Bass/High/Volume/...), полный юникод-набор

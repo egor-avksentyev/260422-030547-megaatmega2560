@@ -151,6 +151,12 @@ void handleRemoteInput() {
             applyRingColorScheme();
             drawColorScreen(settings[currentMenuItem]);
             saveSettings();
+          } else if (menuItems[currentMenuItem] == "Info" && settings[currentMenuItem] == INFO_STREAMER_ROW_INDEX) {
+            // Right на строке Streamer — включить (единственная togglable строка в Info,
+            // остальные — просто чтение показаний, Right/Left на них ничего не делает)
+            streamerRelayOn = true;
+            applyStreamerRelay();
+            drawInfoScreen();
           }
           // Source больше не переключается Right/Left — теперь это список (drawSourceScreen()),
           // навигация Up/Down, см. case IR_UP/IR_DOWN ниже
@@ -192,6 +198,11 @@ void handleRemoteInput() {
             applyRingColorScheme();
             drawColorScreen(settings[currentMenuItem]);
             saveSettings();
+          } else if (menuItems[currentMenuItem] == "Info" && settings[currentMenuItem] == INFO_STREAMER_ROW_INDEX) {
+            // Left на строке Streamer — выключить, симметрично IR_RIGHT
+            streamerRelayOn = false;
+            applyStreamerRelay();
+            drawInfoScreen();
           }
           // Source больше не переключается Right/Left — см. комментарий в case IR_RIGHT
         }
@@ -327,6 +338,12 @@ void handleRemoteInput() {
             settings[currentMenuItem] = (settings[currentMenuItem] - 1 + EQ_COUNT) % EQ_COUNT;
             applyEqPreset(settings[currentMenuItem]);
             drawEqScreen(settings[currentMenuItem]);
+          } else if (menuItems[currentMenuItem] == "Info") {
+            // Info — список строк (drawInfoScreen()), Up двигает курсор вверх по кругу.
+            // В отличие от Source/EQ выше, движение курсора само по себе ничего не
+            // применяет — Left/Right применяют, только когда курсор на строке Streamer
+            settings[currentMenuItem] = (settings[currentMenuItem] - 1 + INFO_ROW_COUNT) % INFO_ROW_COUNT;
+            drawInfoScreen();
           }
         } else {
           // На карусели (не в настройках) Up/Down крутят Volume прямо отсюда, без захода
@@ -370,6 +387,10 @@ void handleRemoteInput() {
             settings[currentMenuItem] = (settings[currentMenuItem] + 1) % EQ_COUNT;
             applyEqPreset(settings[currentMenuItem]);
             drawEqScreen(settings[currentMenuItem]);
+          } else if (menuItems[currentMenuItem] == "Info") {
+            // Down — двигает курсор вниз по кругу, симметрично IR_UP
+            settings[currentMenuItem] = (settings[currentMenuItem] + 1) % INFO_ROW_COUNT;
+            drawInfoScreen();
           }
         } else {
           beginVolumeOverlay();
@@ -429,6 +450,7 @@ void handleRemoteInput() {
             saveSourceStateOnShutdown(); // Переживает настоящее отключение питания, не только Standby
             saveVuMeterStateOnShutdown(); // Аналогично Source/Bypass
             saveEqStateOnShutdown(); // Приоритет сохранения — EQ-пресет или ручная правка Bass/High, смотря что было последним (см. on_off_logic.cpp)
+            saveStreamerStateOnShutdown(); // Реле Streamer (строка в Info) — тот же паттерн, что у Source/Bypass/VU Meter
             saveDimmerColorSettings(); // Уже пишется на каждое изменение (see main.cpp), но лишний раз не помешает
             seekBassHighVolumeToZeroBlocking(); // Сначала все моторы едут в ноль...
             delay(100); // Небольшая задержка для гарантированного отключения
