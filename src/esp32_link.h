@@ -22,6 +22,9 @@
 //                    computeSourceName() в arylic_metadata.cpp того репозитория) — НЕ то же
 //                    самое, что пункт меню "Source" на самой Mega (тот про физическое реле
 //                    AUX/CD/DAT/Streamer); показывается на экране Now Playing
+//   POS:<pos>:<len> — позиция/длительность трека в мс НА МОМЕНТ этого сообщения (те же
+//                    curpos/totlen, что уходят на веб-страницу) — Mega сама досчитывает
+//                    прогресс между кадрами по millis(), как веб-страница по Date.now()
 // ============================================================================
 
 #include <Arduino.h>
@@ -43,6 +46,20 @@ const char* esp32LinkNowPlayingText();
 // esp32LinkIsPlaying() истинно. Не путать с пунктом меню "Source" (settings[] на Mega) —
 // это про стриминг-протокол внутри Arylic, а не про физическое реле AUX/CD/DAT/Streamer
 const char* esp32LinkStreamingSource();
+
+// Позиция/длительность трека (мс) НА МОМЕНТ последнего полученного POS: — валидно смотреть
+// только пока esp32LinkIsPlaying() истинно. Для AirPlay устройство не отдаёт живую позицию
+// вообще (см. project_arylic_airplay_no_metadata в памяти) — там lenMs всё ещё приходит
+// корректным, но posMs просто не будет двигаться; экран Now Playing (display_logic.cpp)
+// поэтому прячет прогресс-бар отдельно по esp32LinkStreamingSource() == "AirPlay", не по
+// самим этим значениям
+long esp32LinkTrackPosMs();
+long esp32LinkTrackLenMs();
+
+// Сколько миллисекунд прошло с момента получения POS: — прибавляется к esp32LinkTrackPosMs()
+// для живого досчёта позиции между кадрами (тот же приём, что arylicTrackAgeMs() на ESP32
+// для веб-страницы, только тут таймер — millis() Mega, а не Date.now() браузера)
+unsigned long esp32LinkTrackPosAgeMs();
 
 // "" пока ESP32 ни разу не прислал свой IP (например ещё не подключился к сети)
 const char* esp32LinkControlIp();

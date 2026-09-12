@@ -40,6 +40,13 @@ void drawInfoScreen();
 // источник (всегда "Streamer" — только это и переключает его на экран, см. main.cpp,
 // updateNowPlaying()). Как и другие полноэкранные режимы (Mute) — сама очищает буфер
 void drawNowPlayingScreen();
+// Частичное обновление прогресс-бара трека внутри уже нарисованного Now Playing (тем же
+// приёмом, что animate*IconPartial() в animations/ — чистит только свой регион и шлёт по SPI
+// только его тайлы через u8g2.updateDisplayArea(), не весь буфер). Вызывать из loop() каждую
+// итерацию, пока nowPlayingActive && !nowPlayingMenuVisitActive && !isMuted — сама пропускает
+// свой ход, если недавно была любая другая передача на дисплей, и если полоска не сдвинулась
+// ни на пиксель с прошлого раза (см. .cpp)
+void updateNowPlayingProgress();
 void displayMessage(const char* message);
 // Применяет displayBrightness (main.h, пункт "Dimmer", вторая строка) как реальный
 // контраст OLED-дисплея (0-100% -> u8g2.setContrast(0-255))

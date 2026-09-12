@@ -21,6 +21,9 @@ static char controlIp[16] = ""; // "255.255.255.255\0" — максимум дл
 static bool playing = false;
 static bool arylicKnown = false;
 static bool arylicOk = false;
+static long trackPosMs = 0;
+static long trackLenMs = 0;
+static unsigned long trackPosCaptureMillis = 0;
 
 // Перерисовывает экран, который сейчас должен быть виден после действия, не завязанного на
 // конкретный пункт меню (Mute/Power) — тот же принцип выбора экрана, что в
@@ -324,6 +327,14 @@ static void handleLine(char* line) {
   } else if (strncmp(line, "SRC:", 4) == 0) {
     strncpy(streamingSource, line + 4, ESP32_LINK_SOURCE_MAX_LEN);
     streamingSource[ESP32_LINK_SOURCE_MAX_LEN] = '\0';
+  } else if (strncmp(line, "POS:", 4) == 0) {
+    char* separator = strchr(line + 4, ':');
+    if (separator) {
+      *separator = '\0';
+      trackPosMs = atol(line + 4);
+      trackLenMs = atol(separator + 1);
+      trackPosCaptureMillis = millis();
+    }
   } else if (strncmp(line, "CMD:", 4) == 0 && line[4] != '\0') {
     executeWebCommand(line[4]);
   }
@@ -365,6 +376,18 @@ const char* esp32LinkNowPlayingText() {
 
 const char* esp32LinkStreamingSource() {
   return streamingSource;
+}
+
+long esp32LinkTrackPosMs() {
+  return trackPosMs;
+}
+
+long esp32LinkTrackLenMs() {
+  return trackLenMs;
+}
+
+unsigned long esp32LinkTrackPosAgeMs() {
+  return millis() - trackPosCaptureMillis;
 }
 
 const char* esp32LinkControlIp() {

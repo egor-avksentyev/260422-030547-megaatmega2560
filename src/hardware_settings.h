@@ -405,6 +405,15 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define NOW_PLAYING_SERVICE_FONT u8g2_font_ncenB08_tr
 #define NOW_PLAYING_SERVICE_X 4
 #define NOW_PLAYING_SERVICE_Y 27
+// Прогресс-бар трека (POS: от ESP32, см. esp32_link.h) — в зазоре между строкой статуса
+// (y=38, текст выше неё) и "Source: Streamer" (y=52, текст начинается примерно с y=44).
+// Спрятан для AirPlay отдельно (см. drawNowPlayingScreen()) — там lenMs валиден, но позиция
+// не двигается, показывать замерший бар только запутывало бы (см. project_arylic_airplay_
+// no_metadata в памяти)
+#define NOW_PLAYING_PROGRESS_X 4
+#define NOW_PLAYING_PROGRESS_Y 40
+#define NOW_PLAYING_PROGRESS_WIDTH 120
+#define NOW_PLAYING_PROGRESS_HEIGHT 4
 
 // ============================================================================
 // NeoPixel-кольца вокруг ручек Bass/High/Volume

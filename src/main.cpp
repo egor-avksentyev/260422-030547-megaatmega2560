@@ -132,6 +132,10 @@ static void updateNowPlaying() {
       lastRenderedSource[sizeof(lastRenderedSource) - 1] = '\0';
       drawNowPlayingScreen();
     }
+    // Тиканье прогресс-бара — отдельно от блока выше: тот перерисовывает экран целиком только
+    // когда меняются текст/источник (редко), а позиция трека должна двигаться каждую секунду.
+    // Сама функция решает, рисовать ли что-то и как часто (см. updateNowPlayingProgress())
+    updateNowPlayingProgress();
   }
 
   if (nowPlayingMenuVisitActive && millis() - nowPlayingMenuVisitLastActivity > NOW_PLAYING_MENU_IDLE_TIMEOUT_MS) {

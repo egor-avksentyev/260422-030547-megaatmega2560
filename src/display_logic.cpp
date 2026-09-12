@@ -564,6 +564,46 @@ void drawInfoScreen() {
   u8g2.sendBuffer();
 }
 
+// Ширина заполненной части прогресс-бара в пикселях (0..NOW_PLAYING_PROGRESS_WIDTH), либо -1,
+// если бар вообще не нужно рисовать: для AirPlay устройство не отдаёт живую позицию трека ни
+// в одном известном API (curpos/UPnP RelTime — оба проверены live, оба замерли на месте, хотя
+// звук реально играл, см. project_arylic_airplay_no_metadata в памяти) — показывать замерший
+// на месте бар только вводило бы в заблуждение, поэтому для этого источника прячем его целиком,
+// а не просто оставляем как есть с "неверными" числами
+static int nowPlayingProgressFilledWidth() {
+  if (strcmp(esp32LinkStreamingSource(), "AirPlay") == 0) {
+    return -1;
+  }
+  long lenMs = esp32LinkTrackLenMs();
+  if (lenMs <= 0) {
+    return -1;
+  }
+  long posMs = esp32LinkTrackPosMs() + (long)esp32LinkTrackPosAgeMs();
+  if (posMs < 0) {
+    posMs = 0;
+  } else if (posMs > lenMs) {
+    posMs = lenMs;
+  }
+  return (int)((long)NOW_PLAYING_PROGRESS_WIDTH * posMs / lenMs);
+}
+
+// Общая отрисовка бара (рамка + заполненная часть) — используется и полной перерисовкой
+// (drawNowPlayingScreen()), и частичным обновлением (updateNowPlayingProgress()) ниже, чтобы
+// не дублировать геометрию в двух местах
+static void renderNowPlayingProgressBar(int filledWidth) {
+  if (filledWidth < 0) {
+    return;
+  }
+  u8g2.drawFrame(NOW_PLAYING_PROGRESS_X, NOW_PLAYING_PROGRESS_Y, NOW_PLAYING_PROGRESS_WIDTH, NOW_PLAYING_PROGRESS_HEIGHT);
+  int innerWidth = filledWidth;
+  if (innerWidth > NOW_PLAYING_PROGRESS_WIDTH - 2) {
+    innerWidth = NOW_PLAYING_PROGRESS_WIDTH - 2;
+  }
+  if (innerWidth > 0) {
+    u8g2.drawBox(NOW_PLAYING_PROGRESS_X + 1, NOW_PLAYING_PROGRESS_Y + 1, innerWidth, NOW_PLAYING_PROGRESS_HEIGHT - 2);
+  }
+}
+
 void drawNowPlayingScreen() {
   waitForDisplayRedrawGap();
 
@@ -577,15 +617,24 @@ void drawNowPlayingScreen() {
   strncpy(truncated, text, NOW_PLAYING_TITLE_MAX_CHARS);
   truncated[NOW_PLAYING_TITLE_MAX_CHARS] = '\0';
 
-  u8g2.setFont(NOW_PLAYING_TITLE_FONT);
-  u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_TITLE_Y);
-  u8g2.print(truncated[0] ? truncated : "...");
-
   // Источник воспроизведения (Spotify/AirPlay/...) — независимая от текста трека строка:
   // AirPlay на этом устройстве не отдаёт Artist/Title вообще (см. project_arylic_airplay_
   // no_metadata в памяти), но источник знать можно всегда, пока он распознан (см.
   // esp32LinkStreamingSource() — пусто, если нет)
   const char* source = esp32LinkStreamingSource();
+  bool isAirPlay = strcmp(source, "AirPlay") == 0;
+
+  u8g2.setFont(NOW_PLAYING_TITLE_FONT);
+  u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_TITLE_Y);
+  if (truncated[0]) {
+    u8g2.print(truncated);
+  } else if (!isAirPlay) {
+    // "..." — самый обычный "ещё не пришла метадата"/загрузка. Для AirPlay текста не будет
+    // никогда (не просто пока не пришло) — строка источника ниже и так скажет "AirPlay",
+    // рядом с "..." это выглядело бы как два противоречащих друг другу сообщения
+    u8g2.print("...");
+  }
+
   if (source[0]) {
     u8g2.setFont(NOW_PLAYING_SERVICE_FONT);
     u8g2.setCursor(NOW_PLAYING_SERVICE_X, NOW_PLAYING_SERVICE_Y);
@@ -596,12 +645,49 @@ void drawNowPlayingScreen() {
   u8g2.setCursor(NOW_PLAYING_STATUS_X, NOW_PLAYING_STATUS_Y);
   u8g2.print("Playing");
 
+  renderNowPlayingProgressBar(nowPlayingProgressFilledWidth());
+
   u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_SOURCE_Y);
   u8g2.print("Source: Streamer");
 
   drawStatusIndicators();
 
   u8g2.sendBuffer();
+}
+
+// Для живого "тиканья" прогресс-бара без полной перерисовки экрана — тот же приём и та же
+// причина, что у animate*IconPartial() в animations/ (см. подробный комментарий там и в
+// CLAUDE.md, "Анимации-индикаторы пунктов меню"): периодическая ПОЛНАЯ перерисовка по таймеру
+// уже один раз ломала приём с ИК-пульта (полная передача экрана иногда "перебивала" передачу
+// свежей команды) — здесь та же логика, просто регион другой (прогресс-бар, не иконка)
+void updateNowPlayingProgress() {
+  static int lastFilledWidth = -2; // -2 - "ещё ни разу не рисовали", отличается от -1 (не показывать) и 0..WIDTH
+  static unsigned long lastPartialUpdate = 0;
+
+  unsigned long now = millis();
+  unsigned long lastAnyDisplayTransfer = max(lastPartialUpdate, lastMenuDrawTime());
+  if (now - lastAnyDisplayTransfer < DISPLAY_REDRAW_MIN_GAP_MS) {
+    return;
+  }
+
+  int filledWidth = nowPlayingProgressFilledWidth();
+  if (filledWidth == lastFilledWidth) {
+    return; // не дёргаем SPI, если полоска не сдвинулась ни на пиксель с прошлого раза
+  }
+  lastFilledWidth = filledWidth;
+  lastPartialUpdate = now;
+
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(NOW_PLAYING_PROGRESS_X, NOW_PLAYING_PROGRESS_Y, NOW_PLAYING_PROGRESS_WIDTH, NOW_PLAYING_PROGRESS_HEIGHT);
+  u8g2.setDrawColor(1);
+  renderNowPlayingProgressBar(filledWidth);
+
+  uint8_t tx = NOW_PLAYING_PROGRESS_X / 8;
+  uint8_t tw = (NOW_PLAYING_PROGRESS_X + NOW_PLAYING_PROGRESS_WIDTH - 1) / 8 - tx + 1;
+  uint8_t ty = NOW_PLAYING_PROGRESS_Y / 8;
+  uint8_t th = (NOW_PLAYING_PROGRESS_Y + NOW_PLAYING_PROGRESS_HEIGHT - 1) / 8 - ty + 1;
+  u8g2.updateDisplayArea(tx, ty, tw, th);
+  markPartialDisplayTransfer();
 }
 
 void displayMessage(const char* message) {
