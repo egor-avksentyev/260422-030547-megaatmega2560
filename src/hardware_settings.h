@@ -127,6 +127,10 @@
 // её значения" (dimmerRowLocked в main.h), а не выходит из настроек, как везде — поэтому выход
 // в карусель меню там требует зажать кнопку на этот срок
 #define DIMMER_EXIT_HOLD_MS 2000
+// То же самое, но внутри Info (см. infoRowLocked в main.h) — короткий клик переключает
+// между выбором строки списка и переключением реле Streamer энкодером, зажатие на этот
+// срок выходит в карусель меню
+#define INFO_EXIT_HOLD_MS 2000
 
 // Сколько валидных переходов таблицы Мазурова соответствуют одному физическому щелчку
 // энкодера. Раньше код считал только 1 фронт на щелчок, поэтому "1 щелчок = 1 encoderValue".
@@ -229,15 +233,19 @@
 #define RELAY_PIN_LED 26
 #define RELAY_PIN_MUTE 28
 // Реле переключения источника (пункт меню "Source") — взаимоисключающе, работает
-// только одно из четырёх одновременно
+// только одно из трёх одновременно
 #define SOURCE_RELAY_1_PIN 30
 #define SOURCE_RELAY_2_PIN 44
 #define SOURCE_RELAY_3_PIN 46
-#define SOURCE_RELAY_4_PIN 47
-#define SOURCE_COUNT 4
+#define SOURCE_COUNT 3
 // Названия источников для экрана (см. drawSourceScreen() в display_logic.cpp) — порядок
 // соответствует порядку переключения settings[7]/applySourceSelection() (relay.cpp)
-const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT", "STREAMER"};
+const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT"};
+// Раньше это было 4-е взаимоисключающее реле источника (STREAMER) — вынесено из Source
+// в отдельный независимый переключаемый пункт (строка "Streamer" в Info, см.
+// applyStreamerRelay() в relay.cpp и drawInfoScreen() в display_logic.cpp), не мешает
+// остальным трём источникам и может быть включён одновременно с любым из них
+#define STREAMER_RELAY_PIN 47
 // Сколько держится полноэкранный показ источника после нажатия Set на пульте (см.
 // beginSourceOverlay()/updateSourceOverlay() в main.cpp), прежде чем само вернуться туда,
 // где был экран до нажатия
@@ -273,6 +281,10 @@ const char* const sourceNames[SOURCE_COUNT] = {"AUX", "CD", "DAT", "STREAMER"};
 #define LED_BASS_PIN 39
 #define LED_HIGH_PIN 41
 #define LED_VOLUME_PIN 43
+// При выключении питания (powerOffDevices(), on_off_logic.cpp) эти три светодиода
+// специально гаснут ПОСЛЕДНИМИ — после того, как реле/кольца/дисплей уже отключены,
+// выдерживается эта пауза, и только потом гаснут они
+#define MENU_LED_SHUTDOWN_DELAY_MS 3000
 
 // --- Физическая кнопка Bypass (кнопка на GND, INPUT_PULLUP): каждое нажатие
 // переключает Bypass в противоположное состояние (не привязана к физическому
@@ -320,25 +332,43 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define INFO_LABEL_X 25
 #define INFO_LABEL_Y 15
 #define INFO_LABEL_UNDERLINE_Y_OFFSET 3
-// Info теперь прокручиваемый список (Up/Down с пульта/энкодера, см. drawInfoScreen() в
-// display_logic.cpp) — строк больше, чем помещается на экране разом (AC + 3 температуры +
-// два IP ESP32 + статус Arylic, см. INFO_ROW_COUNT ниже). Одинаковый шрифт/шаг на все строки
-// (раньше у напряжения сети был отдельный, покрупнее и в углу — убрано ради единообразия
-// списка, самого напряжения теперь просто ещё одна строка). Окно из INFO_LIST_VISIBLE_ROWS
-// строк, выбор строки (индекс верхней видимой) хранится в settings[currentMenuItem], как и у
-// Source/EQ — не по кругу, а зажатый (constrain), см. drawInfoScreen()
+// Info — прокручиваемый список строк (Up/Down с пульта/энкодера, см. drawInfoScreen() в
+// display_logic.cpp): 3 температуры, Streamer (единственная togglable строка — Left/Right
+// с пульта или вращение энкодера в запертом режиме переключает реле, см. STREAMER_RELAY_PIN
+// выше и infoRowLocked в main.h), Setup IP/Control IP/статус Arylic (от ESP32-компаньона,
+// см. esp32_link.h). Курсор — settings[currentMenuItem], тот же приём, что у Source/EQ, но
+// по кругу и без применения значения самим фактом перемещения курсора. AC-напряжение в этот
+// список НЕ входит — своя отдельная строка в углу, как было исходно (см. INFO_VOLTAGE_*
+// ниже), не участвует в прокрутке
+#define INFO_ROW_COUNT 7
+#define INFO_STREAMER_ROW_INDEX 3 // Единственная строка, что реагирует на Left/Right
+#define INFO_LIST_VISIBLE_ROWS 3 // 7 строк не помещаются разом — окно вокруг курсора, как у EQ
 #define INFO_ROW_FONT u8g2_font_ncenB08_tr
 #define INFO_ROW_X 10
-#define INFO_LIST_Y_START 38 // Y (baseline) первой видимой строки — ниже заголовка
+#define INFO_LIST_Y_START 38 // Y (baseline) первой ВИДИМОЙ строки — ниже заголовка, чтобы не пересекались
 #define INFO_LIST_LINE_HEIGHT 12 // При 3 видимых строках последняя на 62 — укладывается в экран высотой 64
-#define INFO_LIST_VISIBLE_ROWS 3
-#define INFO_ROW_COUNT 7 // AC, 3×температура, Setup IP, Control IP, Arylic — см. drawInfoScreen()
-#define INFO_VOLTAGE_LABEL "AC" // Подпись строки напряжения сети — поправь под то, что удобнее читать
+#define INFO_ROW_HIGHLIGHT_PAD_X 2 // Подсветка курсора — тот же приём (drawHighlightedRow()), что у Source/EQ
+#define INFO_ROW_HIGHLIGHT_PAD_Y 2
+#define INFO_ROW_HIGHLIGHT_RADIUS 3
+#define INFO_ROW_DOT_RADIUS 1
+#define INFO_ROW_DOT_X_OFFSET 6
 // Маленький индикатор "N/M" в углу — сколько строк всего и где сейчас окно прокрутки,
 // иначе на экране не видно, что список вообще можно листать дальше
 #define INFO_SCROLL_INDICATOR_FONT u8g2_font_5x7_tr
 #define INFO_SCROLL_INDICATOR_X 108
 #define INFO_SCROLL_INDICATOR_Y 15
+// Напряжение сети — отдельная строка со своим шрифтом/позицией, независимо от списка выше
+// (не участвует в цикле/прокрутке) — справа от заголовка "Info" на той же высоте, как было
+// до того, как Info стал прокручиваемым списком
+#define INFO_VOLTAGE_FONT u8g2_font_ncenB08_tr
+#define INFO_VOLTAGE_X 75
+#define INFO_VOLTAGE_Y 15
+#define INFO_VOLTAGE_LABEL "AC" // Подпись перед значением — поправь под то, что удобнее читать
+// Мини-переключатель у строки Streamer — тот же визуальный язык, что у полноэкранного
+// drawToggleSwitch() (VU Meter/Bypass), но уменьшенный, чтобы влезть в одну строку списка
+#define INFO_TOGGLE_X 100 // Правый край строки — подписи слева ("Streamer") хватает места до этой X
+#define INFO_TOGGLE_WIDTH 20
+#define INFO_TOGGLE_HEIGHT 9
 
 // --- Связь с ESP32-компаньоном (esp32_link.h/.cpp) — приём по UART, Mega только слушает,
 // см. README.md ("Mega только слушает") и репозиторий esp32-audio-web-control. Serial2 —
@@ -769,6 +799,7 @@ const EqPreset eqPresets[EQ_COUNT] = {
 #define EQ_LABEL_UNDERLINE_Y_OFFSET 3
 
 #define EEPROM_EQ_STATE_ADDR 40 // Следующий свободный слот после EEPROM_VU_METER_STATE_ADDR (32)
+#define EEPROM_STREAMER_STATE_ADDR 48 // Следующий свободный слот после EEPROM_EQ_STATE_ADDR (40)
 
 // --- Название текущего пункта меню (крупный текст по центру) на экране drawMenu() ---
 // _tr, а не _tf — пункты меню это обычный ASCII (Bass/High/Volume/...), полный юникод-набор

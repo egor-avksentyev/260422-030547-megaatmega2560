@@ -31,9 +31,11 @@
 
 String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source", "EQ", "Info"};
 int currentMenuItem = 0;
-int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT, 0, 0, 0}; // VU Meter "включено", Bypass "выключено", Dimmer/Color колец, Source/EQ по умолчанию (EQ = Flat, индекс 0), Info не используется (нет редактируемого значения)
+int settings[] = {0, 0, 0, 1, 0, VOLUME_RING_DEFAULT_DIMMER, RING_COLOR_DEFAULT, 0, 0, 0}; // VU Meter "включено", Bypass "выключено", Dimmer/Color колец, Source/EQ по умолчанию (EQ = Flat, индекс 0), Info — курсор списка строк (см. drawInfoScreen())
 bool inSettingsMode = false;
 bool isMuted = false; // Флаг для состояния Mute
+bool streamerRelayOn = false; // Реле Streamer (строка "Streamer" в Info) — см. main.h
+bool infoRowLocked = false; // Выбор строки <-> переключение Streamer энкодером внутри Info — см. main.h
 unsigned long lastMotorInputTime = 0; // Момент последней команды на мотор Bass/High/Volume (для авто-стопа)
 int displayBrightness = DISPLAY_BRIGHTNESS_DEFAULT_PERCENT; // Яркость дисплея, пункт "Dimmer"
 bool dimmerEditingDisplay = false; // Какая строка внутри Dimmer сейчас активна (false = кольца)
@@ -62,9 +64,11 @@ static int knobOverlayLastDrawnValue = -32000; // не перерисовыва�
 bool nowPlayingActive = false;
 bool nowPlayingMenuVisitActive = false;
 static unsigned long nowPlayingMenuVisitLastActivity = 0;
-// Source, который был выбран ДО автопереключения на Streamer — восстанавливается, когда
-// воспроизведение на Arylic останавливается (см. updateNowPlaying() ниже)
-static int sourceBeforeStreamer = 0;
+// Было ли реле Streamer уже включено ДО того, как Arylic начал играть — восстанавливается,
+// когда воспроизведение останавливается (см. updateNowPlaying() ниже). Streamer — независимое
+// реле (main.h/relay.cpp), не часть Source, поэтому здесь запоминается именно его состояние,
+// а не какой-то пункт Source
+static bool streamerWasOnBeforePlayback = false;
 
 void exitNowPlayingToMenu() {
   nowPlayingMenuVisitActive = true;
@@ -80,9 +84,9 @@ void refreshNowPlayingMenuActivity() {
 }
 
 // Опрашивает esp32_link (esp32LinkPoll() дёргает вызывающая сторона отдельно — здесь только
-// реакция на изменение состояния), переключает Source на Streamer/обратно по фронтам
-// PLAY:0/1, перерисовывает полноэкранный Now Playing, когда меняется метадата, и возвращает
-// из "визита" в меню по таймауту простоя. Вызывается из loop() пока !powerOff — см. там же
+// реакция на изменение состояния), включает/выключает реле Streamer по фронтам PLAY:0/1,
+// перерисовывает полноэкранный Now Playing, когда меняется метадата, и возвращает из
+// "визита" в меню по таймауту простоя. Вызывается из loop() пока !powerOff — см. там же
 static void updateNowPlaying() {
   static bool wasPlaying = false;
   static char lastRenderedText[ESP32_LINK_META_MAX_LEN + 1] = "";
@@ -90,20 +94,20 @@ static void updateNowPlaying() {
   bool playingNow = esp32LinkIsPlaying();
 
   if (playingNow && !wasPlaying) {
-    // Восходящий фронт: Arylic начал играть — запоминаем текущий Source (может быть уже
-    // Streamer, тогда восстановление ниже будет безобидным no-op) и переключаем на него
-    sourceBeforeStreamer = settings[sourceMenuIndex()];
-    settings[sourceMenuIndex()] = streamerSourceIndex();
-    applySourceSelection();
+    // Восходящий фронт: Arylic начал играть — запоминаем, было ли реле Streamer уже
+    // включено (тогда восстановление ниже будет безобидным no-op), и включаем его
+    streamerWasOnBeforePlayback = streamerRelayOn;
+    streamerRelayOn = true;
+    applyStreamerRelay();
     nowPlayingActive = true;
     nowPlayingMenuVisitActive = false;
     lastRenderedText[0] = '\0'; // форсируем перерисовку блоком ниже на этом же тике
   } else if (!playingNow && wasPlaying) {
-    // Нисходящий фронт: пауза/стоп — возвращаем прежний Source и уходим в обычную карусель,
-    // независимо от того, был показан полноэкранный Now Playing или пользователь уже
-    // "гостил" в меню (nowPlayingMenuVisitActive)
-    settings[sourceMenuIndex()] = sourceBeforeStreamer;
-    applySourceSelection();
+    // Нисходящий фронт: пауза/стоп — возвращаем прежнее состояние реле Streamer и уходим в
+    // обычную карусель, независимо от того, был показан полноэкранный Now Playing или
+    // пользователь уже "гостил" в меню (nowPlayingMenuVisitActive)
+    streamerRelayOn = streamerWasOnBeforePlayback;
+    applyStreamerRelay();
     nowPlayingActive = false;
     nowPlayingMenuVisitActive = false;
     inSettingsMode = false;
@@ -338,7 +342,7 @@ void setup() {
   pinMode(SOURCE_RELAY_1_PIN, OUTPUT);
   pinMode(SOURCE_RELAY_2_PIN, OUTPUT);
   pinMode(SOURCE_RELAY_3_PIN, OUTPUT);
-  pinMode(SOURCE_RELAY_4_PIN, OUTPUT);
+  pinMode(STREAMER_RELAY_PIN, OUTPUT);
   pinMode(LED_BASS_PIN, OUTPUT);
   pinMode(LED_HIGH_PIN, OUTPUT);
   pinMode(LED_VOLUME_PIN, OUTPUT);
@@ -374,8 +378,8 @@ void loop() {
     if (esp32LinkIsPlaying()) {
       // Arylic начал играть, пока система была в Standby — включаемся тем же путём, что и
       // ручной Power с пульта (см. IR_POWER в remote_control.cpp). updateNowPlaying() сама
-      // подхватит уже true playingNow на следующей же итерации (теперь !powerOff) и сделает
-      // переключение на Streamer + покажет Now Playing — здесь только само включение
+      // подхватит уже true playingNow на следующей же итерации (теперь !powerOff) и включит
+      // реле Streamer + покажет Now Playing — здесь только само включение
       powerOnDevices();
       powerOff = false;
     }
@@ -508,9 +512,20 @@ void loop() {
           applyEqPreset(settings[currentMenuItem]);
           drawEqScreen(settings[currentMenuItem]);
         } else if (menuItems[currentMenuItem] == "Info") {
-          // Прокрутка списка строк (AC/температуры/IP/статус Arylic) — не по кругу, а
-          // зажато (constrain), см. drawInfoScreen() в display_logic.cpp за деталями
-          settings[currentMenuItem] = constrain(settings[currentMenuItem] + direction, 0, INFO_ROW_COUNT - INFO_LIST_VISIBLE_ROWS);
+          // Список строк (температуры/Streamer/Setup IP/Control IP/Arylic, см.
+          // drawInfoScreen()) — тот же приём двухуровневой навигации, что у Dimmer
+          // (dimmerRowLocked): пока !infoRowLocked, вращение просто двигает курсор по кругу,
+          // ничего не применяя. После короткого клика (infoRowLocked, см.
+          // checkEncoderButton()) вращение переключает Streamer — но только если курсор
+          // стоит именно на его строке, на остальных строках это просто нечего переключать.
+          // Пульт (Left/Right/Up/Down) на этот флаг не смотрит — там Left/Right сразу
+          // переключают Streamer, независимо от состояния энкодера
+          if (!infoRowLocked) {
+            settings[currentMenuItem] = ((settings[currentMenuItem] + direction) % INFO_ROW_COUNT + INFO_ROW_COUNT) % INFO_ROW_COUNT;
+          } else if (settings[currentMenuItem] == INFO_STREAMER_ROW_INDEX) {
+            streamerRelayOn = (direction > 0);
+            applyStreamerRelay();
+          }
           encoderValue = 0;
           drawInfoScreen();
         }
@@ -520,19 +535,25 @@ void loop() {
 
   // Обновление светодиодов в режиме настройки (или во время временного показа Volume
   // с карусели через Up/Down — см. volumeOverlayActive, или во время ручного вращения
-  // Bass/High/Volume рукой — см. knobIndicatorActiveItem)
-  if (inSettingsMode || volumeOverlayActive || knobIndicatorActiveItem != -1) {
-    if (menuItems[currentMenuItem] == "Bass") {
-      blinkLED(LED_BASS_PIN);
-    } else if (menuItems[currentMenuItem] == "High") {
-      blinkLED(LED_HIGH_PIN);
-    } else if (menuItems[currentMenuItem] == "Volume") {
-      blinkLED(LED_VOLUME_PIN);
+  // Bass/High/Volume рукой — см. knobIndicatorActiveItem). Раньше этот блок не проверял
+  // powerOff — powerOffDevices() гасил светодиоды (LOW), но уже на следующей итерации
+  // loop() этот же блок (ветка "иначе") тут же зажигал их обратно (HIGH), т.к.
+  // inSettingsMode/оверлеи к этому моменту уже false. Теперь блок целиком пропускается
+  // в Standby, погашенное состояние остаётся как есть
+  if (!powerOff) {
+    if (inSettingsMode || volumeOverlayActive || knobIndicatorActiveItem != -1) {
+      if (menuItems[currentMenuItem] == "Bass") {
+        blinkLED(LED_BASS_PIN);
+      } else if (menuItems[currentMenuItem] == "High") {
+        blinkLED(LED_HIGH_PIN);
+      } else if (menuItems[currentMenuItem] == "Volume") {
+        blinkLED(LED_VOLUME_PIN);
+      }
+    } else {
+      digitalWrite(LED_BASS_PIN, HIGH);
+      digitalWrite(LED_HIGH_PIN, HIGH);
+      digitalWrite(LED_VOLUME_PIN, HIGH);
     }
-  } else {
-    digitalWrite(LED_BASS_PIN, HIGH);
-    digitalWrite(LED_HIGH_PIN, HIGH);
-    digitalWrite(LED_VOLUME_PIN, HIGH);
   }
 
   // Крутящаяся иконка пункта меню в углу drawMenu(), пока пользователь сидит на карусели

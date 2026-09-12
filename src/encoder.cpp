@@ -38,6 +38,8 @@ void checkEncoderButton() {
   // в настройки Dimmer (должен работать как обычно, даже если его удержать), от клика,
   // сделанного уже ВНУТРИ Dimmer (там короткий клик/удержание значат другое, см. ниже)
   static bool pressStartedInDimmer = false;
+  // Тот же приём, что pressStartedInDimmer выше, но для Info (см. infoRowLocked в main.h)
+  static bool pressStartedInInfo = false;
 
   bool isPressed = (digitalRead(BUTTON_PIN) == LOW);
 
@@ -58,8 +60,9 @@ void checkEncoderButton() {
     pressStartTime = currentTime;
     longPressHandled = false;
     pressStartedInDimmer = inSettingsMode && menuItems[currentMenuItem] == "Dimmer";
+    pressStartedInInfo = inSettingsMode && menuItems[currentMenuItem] == "Info";
 
-    if (!pressStartedInDimmer) {
+    if (!pressStartedInDimmer && !pressStartedInInfo) {
       if (currentTime - lastButtonPressTime < DOUBLE_CLICK_THRESHOLD_MS) {
         // Обнаружено двойное нажатие
         inSettingsMode = false;
@@ -84,6 +87,7 @@ void checkEncoderButton() {
           } else if (menuItems[currentMenuItem] == "EQ") {
             drawEqScreen(settings[currentMenuItem]);
           } else if (menuItems[currentMenuItem] == "Info") {
+            infoRowLocked = false; // Каждый новый вход в Info начинается с выбора строки
             drawInfoScreen();
           } else {
             drawArrowIndicator(settings[currentMenuItem], false, false); // Переход на экран с кругом и стрелочкой для Bass, High, Volume
@@ -97,8 +101,9 @@ void checkEncoderButton() {
       }
       lastButtonPressTime = currentTime;
     }
-    // pressStartedInDimmer: короткий клик/долгое удержание обрабатываются ниже, по мере
-    // удержания и на отпускании — см. комментарии у DIMMER_EXIT_HOLD_MS в hardware_settings.h
+    // pressStartedInDimmer/pressStartedInInfo: короткий клик/долгое удержание обрабатываются
+    // ниже, по мере удержания и на отпускании — см. комментарии у DIMMER_EXIT_HOLD_MS/
+    // INFO_EXIT_HOLD_MS в hardware_settings.h
   } else if (isPressed && pressStartedInDimmer && !longPressHandled &&
              millis() - pressStartTime >= DIMMER_EXIT_HOLD_MS) {
     // Зажали кнопку внутри Dimmer на DIMMER_EXIT_HOLD_MS — выходим в карусель меню,
@@ -114,6 +119,21 @@ void checkEncoderButton() {
     // переключает "выбор строки" <-> "редактирование её значения" (см. dimmerRowLocked в main.h)
     dimmerRowLocked = !dimmerRowLocked;
     drawDimmerScreen();
+  } else if (isPressed && pressStartedInInfo && !longPressHandled &&
+             millis() - pressStartTime >= INFO_EXIT_HOLD_MS) {
+    // Зажали кнопку внутри Info на INFO_EXIT_HOLD_MS — выходим в карусель меню,
+    // независимо от того, был курсор в выборе строки или в переключении Streamer
+    longPressHandled = true;
+    inSettingsMode = false;
+    resetCursor();
+    encoderValue = 0;
+    stopAllMotors();
+    drawMenu();
+  } else if (!isPressed && wasPressed && pressStartedInInfo && !longPressHandled) {
+    // Короткий клик внутри Info (отпустили раньше, чем сработало удержание) —
+    // переключает "выбор строки" <-> "переключение Streamer вращением" (см. infoRowLocked в main.h)
+    infoRowLocked = !infoRowLocked;
+    drawInfoScreen();
   }
 
   wasPressed = isPressed;

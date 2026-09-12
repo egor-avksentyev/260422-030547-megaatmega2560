@@ -50,3 +50,8 @@ void saveVuMeterStateOnShutdown();
 // описывает. Если наоборот — пресет применили ПОСЛЕ ручной правки, он активен и имеет
 // приоритет при восстановлении
 void saveEqStateOnShutdown();
+
+// Долговременная (EEPROM) память реле Streamer (строка "Streamer" в Info, main.h/relay.cpp)
+// — тот же паттерн, что у Source/Bypass/VU Meter: пишется только при выключении,
+// восстанавливается сама powerOnDevices() при следующем включении
+void saveStreamerStateOnShutdown();

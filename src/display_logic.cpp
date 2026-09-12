@@ -450,6 +450,27 @@ void drawEqScreen(int eqIndex) {
   u8g2.sendBuffer();
 }
 
+// Мини-переключатель для строки Streamer в Info — тот же визуальный язык, что у
+// полноэкранного drawToggleSwitch() (заполненная дорожка + "вырезанный" бегунок, когда
+// включено; пустая дорожка + закрашенный бегунок слева, когда выключено), только сильно
+// уменьшенный, чтобы влезть в одну строку списка (см. INFO_TOGGLE_*, hardware_settings.h)
+static void drawInlineToggle(int x, int y, bool state) {
+  int h = INFO_TOGGLE_HEIGHT;
+  int w = INFO_TOGGLE_WIDTH;
+  int radius = h / 2;
+  int knobRadius = radius - 1;
+  int knobY = y + radius;
+  u8g2.drawRFrame(x, y, w, h, radius);
+  if (state) {
+    u8g2.drawRBox(x, y, w, h, radius);
+    u8g2.setDrawColor(0);
+    u8g2.drawDisc(x + w - radius, knobY, knobRadius);
+    u8g2.setDrawColor(1);
+  } else {
+    u8g2.drawDisc(x + radius, knobY, knobRadius);
+  }
+}
+
 void drawInfoScreen() {
   waitForDisplayRedrawGap();
 
@@ -460,10 +481,7 @@ void drawInfoScreen() {
   u8g2.print(menuItems[currentMenuItem]);
   drawTitleUnderline(INFO_LABEL_X, INFO_LABEL_Y, "Info", INFO_LABEL_UNDERLINE_Y_OFFSET);
 
-  // Строк больше, чем помещается разом (см. INFO_ROW_COUNT/INFO_LIST_VISIBLE_ROWS,
-  // hardware_settings.h) — Up/Down прокручивают окно, позиция хранится в
-  // settings[currentMenuItem], как и у Source/EQ, но зажата (constrain), не по кругу —
-  // это линейный список, а не набор дискретных вариантов на выбор
+  // Живые значения строк — считаются каждый раз заново, не кэшируются между кадрами
   float temps[3];
   readAllTemperatures(temps);
   int voltageRaw;
@@ -477,60 +495,69 @@ void drawInfoScreen() {
   Serial.print(voltage);
   Serial.println("V");
 
-  char rowLabels[INFO_ROW_COUNT][10];
-  char rowValues[INFO_ROW_COUNT][16];
-
-  strcpy(rowLabels[0], INFO_VOLTAGE_LABEL);
-  snprintf(rowValues[0], sizeof(rowValues[0]), "%dV", voltage);
-
+  // Как и у Dimmer (drawDimmerScreen()) — вся строка "label: value" одной готовой строкой,
+  // подсветка (drawHighlightedRow()) закрывает её целиком, не только label отдельно от
+  // value. Исключения: Streamer — в строке только подпись, значение показывает отдельно
+  // нарисованный переключатель (drawInlineToggle()), а не текст. AC-напряжение сюда не
+  // входит вообще — рисуется отдельно ниже, своей строкой в углу, как было исходно
+  // 22 байта — с запасом под самую длинную реальную строку ("Arylic: disconnected" = 21+null)
+  char rowText[INFO_ROW_COUNT][22];
   for (int i = 0; i < 3; i++) {
-    strncpy(rowLabels[1 + i], tempSensorLabels[i], sizeof(rowLabels[0]) - 1);
-    rowLabels[1 + i][sizeof(rowLabels[0]) - 1] = '\0';
     if (temps[i] == TEMP_SENSOR_INVALID) {
-      strcpy(rowValues[1 + i], "--");
+      snprintf(rowText[i], sizeof(rowText[0]), "%s: --", tempSensorLabels[i]);
     } else {
       // dtostrf(), не snprintf("%f"...) — avr-libc по умолчанию собран без поддержки
       // float в *printf, dtostrf() всегда доступна и как раз для этого существует
       char numBuf[8];
       dtostrf(temps[i], 1, 1, numBuf);
-      snprintf(rowValues[1 + i], sizeof(rowValues[0]), "%sC", numBuf);
+      snprintf(rowText[i], sizeof(rowText[0]), "%s: %sC", tempSensorLabels[i], numBuf);
     }
   }
-
-  strcpy(rowLabels[4], "Setup");
-  strncpy(rowValues[4], ESP32_SETUP_IP_STRING, sizeof(rowValues[0]) - 1);
-  rowValues[4][sizeof(rowValues[0]) - 1] = '\0';
-
-  strcpy(rowLabels[5], "Control");
+  strcpy(rowText[INFO_STREAMER_ROW_INDEX], "Streamer");
+  snprintf(rowText[4], sizeof(rowText[0]), "Setup: %s", ESP32_SETUP_IP_STRING);
   const char* controlIp = esp32LinkControlIp();
-  strncpy(rowValues[5], controlIp[0] ? controlIp : "--", sizeof(rowValues[0]) - 1);
-  rowValues[5][sizeof(rowValues[0]) - 1] = '\0';
+  snprintf(rowText[5], sizeof(rowText[0]), "Control: %s", controlIp[0] ? controlIp : "--");
+  snprintf(rowText[6], sizeof(rowText[0]), "Arylic: %s",
+    !esp32LinkArylicKnown() ? "?" : (esp32LinkArylicOk() ? "ok" : "disconnected"));
 
-  strcpy(rowLabels[6], "Arylic");
-  strcpy(rowValues[6], !esp32LinkArylicKnown() ? "?" : (esp32LinkArylicOk() ? "ok" : "disconnected"));
-
-  int maxScroll = INFO_ROW_COUNT - INFO_LIST_VISIBLE_ROWS;
-  int scroll = constrain(settings[currentMenuItem], 0, maxScroll);
-  settings[currentMenuItem] = scroll;
+  // Курсор (settings[currentMenuItem]) двигает окно по кругу, центрируясь на выбранной
+  // строке — тот же приём windowStart, что у EQ (drawEqScreen()), т.к. все INFO_ROW_COUNT
+  // строк не помещаются разом
+  int cursor = settings[currentMenuItem];
+  int windowStart = cursor - (INFO_LIST_VISIBLE_ROWS - 1) / 2;
+  windowStart = constrain(windowStart, 0, max(0, INFO_ROW_COUNT - INFO_LIST_VISIBLE_ROWS));
 
   u8g2.setFont(INFO_ROW_FONT);
   for (int row = 0; row < INFO_LIST_VISIBLE_ROWS; row++) {
-    int i = scroll + row;
+    int i = windowStart + row;
+    if (i >= INFO_ROW_COUNT) {
+      break;
+    }
     int y = INFO_LIST_Y_START + row * INFO_LIST_LINE_HEIGHT;
-    u8g2.setCursor(INFO_ROW_X, y);
-    u8g2.print(rowLabels[i]);
-    u8g2.print(": ");
-    u8g2.print(rowValues[i]);
+    drawHighlightedRow(INFO_ROW_X, y, rowText[i], i == cursor,
+      INFO_ROW_HIGHLIGHT_PAD_X, INFO_ROW_HIGHLIGHT_PAD_Y, INFO_ROW_HIGHLIGHT_RADIUS,
+      INFO_ROW_DOT_RADIUS, INFO_ROW_DOT_X_OFFSET);
+    if (i == INFO_STREAMER_ROW_INDEX) {
+      drawInlineToggle(INFO_TOGGLE_X, y - u8g2.getAscent(), streamerRelayOn);
+    }
   }
 
-  // "N-M/COUNT" в углу — единственная подсказка, что список вообще можно листать дальше
+  // "N-M/COUNT" в углу — подсказка, что список можно листать дальше (7 строк, видно 3 разом)
   u8g2.setFont(INFO_SCROLL_INDICATOR_FONT);
   u8g2.setCursor(INFO_SCROLL_INDICATOR_X, INFO_SCROLL_INDICATOR_Y);
-  u8g2.print(scroll + 1);
+  u8g2.print(windowStart + 1);
   u8g2.print("-");
-  u8g2.print(scroll + INFO_LIST_VISIBLE_ROWS);
+  u8g2.print(min(windowStart + INFO_LIST_VISIBLE_ROWS, INFO_ROW_COUNT));
   u8g2.print("/");
   u8g2.print(INFO_ROW_COUNT);
+
+  // AC-напряжение — своей строкой в углу, как было исходно, не часть списка выше
+  u8g2.setFont(INFO_VOLTAGE_FONT);
+  u8g2.setCursor(INFO_VOLTAGE_X, INFO_VOLTAGE_Y);
+  u8g2.print(INFO_VOLTAGE_LABEL);
+  u8g2.print(":");
+  u8g2.print(voltage);
+  u8g2.print("V");
 
   drawStatusIndicators();
 

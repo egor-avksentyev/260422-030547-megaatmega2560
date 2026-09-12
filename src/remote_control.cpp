@@ -160,6 +160,12 @@ void handleRemoteInput() {
             applyRingColorScheme();
             drawColorScreen(settings[currentMenuItem]);
             saveSettings();
+          } else if (menuItems[currentMenuItem] == "Info" && settings[currentMenuItem] == INFO_STREAMER_ROW_INDEX) {
+            // Right на строке Streamer — включить (единственная togglable строка в Info,
+            // остальные — просто чтение показаний, Right/Left на них ничего не делает)
+            streamerRelayOn = true;
+            applyStreamerRelay();
+            drawInfoScreen();
           }
           // Source больше не переключается Right/Left — теперь это список (drawSourceScreen()),
           // навигация Up/Down, см. case IR_UP/IR_DOWN ниже
@@ -201,6 +207,11 @@ void handleRemoteInput() {
             applyRingColorScheme();
             drawColorScreen(settings[currentMenuItem]);
             saveSettings();
+          } else if (menuItems[currentMenuItem] == "Info" && settings[currentMenuItem] == INFO_STREAMER_ROW_INDEX) {
+            // Left на строке Streamer — выключить, симметрично IR_RIGHT
+            streamerRelayOn = false;
+            applyStreamerRelay();
+            drawInfoScreen();
           }
           // Source больше не переключается Right/Left — см. комментарий в case IR_RIGHT
         }
@@ -234,6 +245,7 @@ void handleRemoteInput() {
             } else if (menuItems[currentMenuItem] == "EQ") {
               drawEqScreen(settings[currentMenuItem]);
             } else if (menuItems[currentMenuItem] == "Info") {
+              infoRowLocked = false; // Каждый новый вход в Info начинается с выбора строки (см. main.h)
               drawInfoScreen();
             } else {
               drawArrowIndicator(settings[currentMenuItem], false, false);
@@ -344,9 +356,10 @@ void handleRemoteInput() {
             applyEqPreset(settings[currentMenuItem]);
             drawEqScreen(settings[currentMenuItem]);
           } else if (menuItems[currentMenuItem] == "Info") {
-            // Info — прокручиваемый список (drawInfoScreen()), зажатый, не по кругу —
-            // см. hardware_settings.h, INFO_ROW_COUNT/INFO_LIST_VISIBLE_ROWS
-            settings[currentMenuItem] = constrain(settings[currentMenuItem] - 1, 0, INFO_ROW_COUNT - INFO_LIST_VISIBLE_ROWS);
+            // Info — список строк (drawInfoScreen()), Up двигает курсор вверх по кругу.
+            // В отличие от Source/EQ выше, движение курсора само по себе ничего не
+            // применяет — Left/Right применяют, только когда курсор на строке Streamer
+            settings[currentMenuItem] = (settings[currentMenuItem] - 1 + INFO_ROW_COUNT) % INFO_ROW_COUNT;
             drawInfoScreen();
           }
         } else {
@@ -392,8 +405,8 @@ void handleRemoteInput() {
             applyEqPreset(settings[currentMenuItem]);
             drawEqScreen(settings[currentMenuItem]);
           } else if (menuItems[currentMenuItem] == "Info") {
-            // Down — прокручивает список вниз, симметрично IR_UP
-            settings[currentMenuItem] = constrain(settings[currentMenuItem] + 1, 0, INFO_ROW_COUNT - INFO_LIST_VISIBLE_ROWS);
+            // Down — двигает курсор вниз по кругу, симметрично IR_UP
+            settings[currentMenuItem] = (settings[currentMenuItem] + 1) % INFO_ROW_COUNT;
             drawInfoScreen();
           }
         } else {
@@ -445,15 +458,16 @@ void handleRemoteInput() {
             // приём ИК работает по таймеру независимо от loop(), пока мы тут блокированы
             drainPendingRc5Frame();
           } else {
-            // Отключение устройств, затем отображение "POWER OFF"
-            digitalWrite(LED_BASS_PIN, LOW);
-            digitalWrite(LED_HIGH_PIN, LOW);
-            digitalWrite(LED_VOLUME_PIN, LOW);
+            // Отключение устройств, затем отображение "POWER OFF". Светодиоды Bass/High/
+            // Volume специально НЕ гасим здесь — они должны оставаться последним, что ещё
+            // светится, и погаснуть только в самом конце, через MENU_LED_SHUTDOWN_DELAY_MS
+            // после того, как всё остальное уже потухло (см. powerOffDevices())
             saveBypassStateOnShutdown(); // Восстанавливается при следующем включении, независимо от значения
             saveBassHighPositionOnShutdown(); // Пока моторы ещё не сдвинуты — иначе тут же перезапишет 0dB/0%
             saveSourceStateOnShutdown(); // Переживает настоящее отключение питания, не только Standby
             saveVuMeterStateOnShutdown(); // Аналогично Source/Bypass
             saveEqStateOnShutdown(); // Приоритет сохранения — EQ-пресет или ручная правка Bass/High, смотря что было последним (см. on_off_logic.cpp)
+            saveStreamerStateOnShutdown(); // Реле Streamer (строка в Info) — тот же паттерн, что у Source/Bypass/VU Meter
             saveDimmerColorSettings(); // Уже пишется на каждое изменение (see main.cpp), но лишний раз не помешает
             seekBassHighVolumeToZeroBlocking(); // Сначала все моторы едут в ноль...
             delay(100); // Небольшая задержка для гарантированного отключения
