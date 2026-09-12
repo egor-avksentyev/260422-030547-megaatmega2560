@@ -325,14 +325,16 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define INFO_LABEL_Y 15
 #define INFO_LABEL_UNDERLINE_Y_OFFSET 3
 // Info — прокручиваемый список строк (Up/Down с пульта/энкодера, см. drawInfoScreen() в
-// display_logic.cpp): AC-напряжение, 3 температуры, Streamer (единственная togglable
-// строка — Left/Right с пульта переключает реле, см. STREAMER_RELAY_PIN выше). Курсор —
-// settings[currentMenuItem], тот же приём, что у Source/EQ, но по кругу и без применения
-// значения самим фактом перемещения курсора (сравни с Source/EQ, где движение курсора
-// само выбирает значение)
-#define INFO_ROW_COUNT 5
-#define INFO_STREAMER_ROW_INDEX 4 // Последняя строка — единственная, что реагирует на Left/Right
-#define INFO_LIST_VISIBLE_ROWS 3 // Все 5 строк не помещаются разом — окно вокруг курсора, как у EQ
+// display_logic.cpp): 3 температуры, Streamer (единственная togglable строка — Left/Right
+// с пульта переключает реле, см. STREAMER_RELAY_PIN выше). Курсор — settings[currentMenuItem],
+// тот же приём, что у Source/EQ, но по кругу и без применения значения самим фактом
+// перемещения курсора (сравни с Source/EQ, где движение курсора само выбирает значение).
+// AC-напряжение в этот список НЕ входит — своя отдельная строка в углу, как было исходно
+// (см. INFO_VOLTAGE_* ниже), не участвует в прокрутке
+#define INFO_ROW_COUNT 4
+#define INFO_STREAMER_ROW_INDEX 3 // Последняя строка — единственная, что реагирует на Left/Right
+#define INFO_LIST_VISIBLE_ROWS 3 // 4 строки не помещаются разом (см. INFO_LIST_Y_START/LINE_HEIGHT
+// ниже — 4-я строка ушла бы за 64px) — окно вокруг курсора, как у EQ
 #define INFO_ROW_FONT u8g2_font_ncenB08_tr
 #define INFO_ROW_X 10
 #define INFO_LIST_Y_START 38 // Y (baseline) первой ВИДИМОЙ строки — ниже заголовка, чтобы не пересекались
@@ -342,7 +344,13 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define INFO_ROW_HIGHLIGHT_RADIUS 3
 #define INFO_ROW_DOT_RADIUS 1
 #define INFO_ROW_DOT_X_OFFSET 6
-#define INFO_VOLTAGE_LABEL "AC" // Подпись строки напряжения сети — поправь под то, что удобнее читать
+// Напряжение сети — отдельная строка со своим шрифтом/позицией, независимо от списка выше
+// (не участвует в цикле/прокрутке) — справа от заголовка "Info" на той же высоте, как было
+// до того, как Info стал прокручиваемым списком
+#define INFO_VOLTAGE_FONT u8g2_font_ncenB08_tr
+#define INFO_VOLTAGE_X 75
+#define INFO_VOLTAGE_Y 15
+#define INFO_VOLTAGE_LABEL "AC" // Подпись перед значением — поправь под то, что удобнее читать
 // Мини-переключатель у строки Streamer — тот же визуальный язык, что у полноэкранного
 // drawToggleSwitch() (VU Meter/Bypass), но уменьшенный, чтобы влезть в одну строку списка
 #define INFO_TOGGLE_X 100 // Правый край строки — подписи слева ("Streamer") хватает места до этой X

@@ -497,18 +497,18 @@ void drawInfoScreen() {
   // Как и у Dimmer (drawDimmerScreen()) — вся строка "label: value" одной готовой строкой,
   // подсветка (drawHighlightedRow()) закрывает её целиком, не только label отдельно от
   // value. Исключение — Streamer: там в строке только подпись, значение показывает
-  // отдельно нарисованный переключатель (drawInlineToggle()), а не текст
+  // отдельно нарисованный переключатель (drawInlineToggle()), а не текст.
+  // AC-напряжение сюда не входит — рисуется отдельно ниже, своей строкой в углу
   char rowText[INFO_ROW_COUNT][16];
-  snprintf(rowText[0], sizeof(rowText[0]), "%s: %dV", INFO_VOLTAGE_LABEL, voltage);
   for (int i = 0; i < 3; i++) {
     if (temps[i] == TEMP_SENSOR_INVALID) {
-      snprintf(rowText[1 + i], sizeof(rowText[0]), "%s: --", tempSensorLabels[i]);
+      snprintf(rowText[i], sizeof(rowText[0]), "%s: --", tempSensorLabels[i]);
     } else {
       // dtostrf(), не snprintf("%f"...) — avr-libc по умолчанию собран без поддержки
       // float в *printf, dtostrf() всегда доступна и как раз для этого существует
       char numBuf[8];
       dtostrf(temps[i], 1, 1, numBuf);
-      snprintf(rowText[1 + i], sizeof(rowText[0]), "%s: %sC", tempSensorLabels[i], numBuf);
+      snprintf(rowText[i], sizeof(rowText[0]), "%s: %sC", tempSensorLabels[i], numBuf);
     }
   }
   strcpy(rowText[INFO_STREAMER_ROW_INDEX], "Streamer");
@@ -534,6 +534,14 @@ void drawInfoScreen() {
       drawInlineToggle(INFO_TOGGLE_X, y - u8g2.getAscent(), streamerRelayOn);
     }
   }
+
+  // AC-напряжение — своей строкой в углу, как было исходно, не часть списка выше
+  u8g2.setFont(INFO_VOLTAGE_FONT);
+  u8g2.setCursor(INFO_VOLTAGE_X, INFO_VOLTAGE_Y);
+  u8g2.print(INFO_VOLTAGE_LABEL);
+  u8g2.print(":");
+  u8g2.print(voltage);
+  u8g2.print("V");
 
   drawStatusIndicators();
 
