@@ -180,6 +180,13 @@ static void updateNowPlaying() {
 
   if (nowPlayingMenuVisitActive && millis() - nowPlayingMenuVisitLastActivity > NOW_PLAYING_MENU_IDLE_TIMEOUT_MS) {
     nowPlayingMenuVisitActive = false;
+    // Тот же баг, что чинили у восходящего фронта выше — если пользователь во время "визита"
+    // зашёл внутрь какого-то пункта (inSettingsMode=true, например Info), без явного сброса
+    // периодическое живое обновление ЭТОГО пункта (гейт на inSettingsMode/currentMenuItem, не
+    // на nowPlayingActive — см. живое обновление Info/Bass/High/Volume в loop()) продолжало бы
+    // перерисовывать его поверх только что нарисованного Now Playing на каждом тике
+    inSettingsMode = false;
+    volumeOverlayActive = false;
     if (!isMuted) {
       drawNowPlayingScreen();
     }
