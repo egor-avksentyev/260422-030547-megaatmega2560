@@ -821,6 +821,10 @@ void updateNowPlayingTitleScroll() {
   u8g2.drawBox(NOW_PLAYING_TITLE_X, clearTop, NOW_PLAYING_TITLE_SCROLL_WIDTH, clearHeight);
   u8g2.setDrawColor(1);
   renderNowPlayingTitleClipped(text, scrollOffset);
+  // Прокрутка теперь на всю ширину экрана — задевает BYPASS_INDICATOR_X/Y (80,10), а бегущий
+  // текст только что стёр и перерисовал этот регион. drawStatusIndicators() сама ничего не
+  // делает, если Bypass выключен — безопасно звать на каждый тик
+  drawStatusIndicators();
 
   uint8_t tx = NOW_PLAYING_TITLE_X / 8;
   uint8_t tw = (NOW_PLAYING_TITLE_X + NOW_PLAYING_TITLE_SCROLL_WIDTH - 1) / 8 - tx + 1;

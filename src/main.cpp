@@ -138,7 +138,15 @@ static void updateNowPlaying() {
   }
   wasPlaying = playingNow;
 
-  if (nowPlayingActive && !nowPlayingMenuVisitActive && !isMuted) {
+  // knobIndicatorActiveItem != -1 — пользователь сейчас крутит Bass/High/Volume РУКОЙ (см.
+  // блок обнаружения в loop()), и физический экран прямо сейчас занят полноэкранным
+  // drawArrowIndicator() того пункта, а не Now Playing — nowPlayingActive при этом остаётся
+  // true (это состояние не трогается), так что без этой проверки текстовый редрав и оба
+  // тикера ниже (updateNowPlayingProgress()/updateNowPlayingTitleScroll()) продолжали бы
+  // частично перерисовывать буфер поверх ЭТОГО экрана, ломая его несвязанными фрагментами
+  // прогресс-бара/бегущей строки. Как только рукой крутить перестают, тот же блок в loop()
+  // сам возвращает drawNowPlayingScreen() — тикать снова можно с чистого листа
+  if (nowPlayingActive && !nowPlayingMenuVisitActive && !isMuted && knobIndicatorActiveItem == -1) {
     // Источник (Spotify/AirPlay/...) сравнивается отдельно от текста трека — на AirPlay текст
     // всегда пуст (см. project_arylic_airplay_no_metadata в памяти), так что смена источника
     // без смены текста иначе осталась бы незамеченной и экран не перерисовался бы
