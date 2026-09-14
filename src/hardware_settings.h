@@ -393,7 +393,17 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define NOW_PLAYING_TITLE_FONT u8g2_font_ncenB08_tr
 #define NOW_PLAYING_TITLE_X 4
 #define NOW_PLAYING_TITLE_Y 16
-#define NOW_PLAYING_TITLE_MAX_CHARS 20 // Грубое усечение под ширину экрана этим шрифтом — без переноса строк
+#define NOW_PLAYING_TITLE_MAX_CHARS 20 // Верхняя граница буфера строки — не влияет на прокрутку ниже, та меряет реальную ширину в пикселях
+// Бегущая строка для названий, которые не помещаются целиком (см. updateNowPlayingTitleScroll()
+// в display_logic.cpp) — короткие названия просто рисуются статично, эта прокрутка включается
+// только когда реальная ширина текста (u8g2.getStrWidth()) больше NOW_PLAYING_TITLE_SCROLL_WIDTH.
+// Ширина взята МЕНЬШЕ, чем можно было бы (до 124px), намеренно — правее X=78 начинается
+// BYPASS_INDICATOR_X (80, см. ниже), а частичное обновление этой строки (не полная
+// перерисовка) иначе стирало бы надпись "bypass", не восстанавливая её (drawStatusIndicators()
+// вызывается только из полной перерисовки экрана)
+#define NOW_PLAYING_TITLE_SCROLL_WIDTH 74
+#define NOW_PLAYING_TITLE_SCROLL_GAP_PX 16 // Пробел между концом текста и его повтором при зацикливании
+#define NOW_PLAYING_TITLE_SCROLL_STEP_MS 120 // мс на 1px сдвига — скорость прокрутки
 #define NOW_PLAYING_STATUS_FONT u8g2_font_ncenB08_tr
 #define NOW_PLAYING_STATUS_X 4
 #define NOW_PLAYING_STATUS_Y 38
@@ -414,6 +424,12 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define NOW_PLAYING_PROGRESS_Y 40
 #define NOW_PLAYING_PROGRESS_WIDTH 120
 #define NOW_PLAYING_PROGRESS_HEIGHT 4
+// Область частичного обновления и для бара, и для строки статуса (NOW_PLAYING_STATUS_Y=38,
+// та же строка, где раньше всегда стояло "Playing" — теперь там счётчик "1:32 / 3:50", когда
+// позиция известна, см. updateNowPlayingProgress()) — обновляются вместе одним updateDisplayArea(),
+// раз меняются от одних и тех же данных синхронно
+#define NOW_PLAYING_STATUS_CLEAR_Y 29
+#define NOW_PLAYING_STATUS_CLEAR_HEIGHT 15
 
 // ============================================================================
 // NeoPixel-кольца вокруг ручек Bass/High/Volume

@@ -102,6 +102,15 @@ static void updateNowPlaying() {
     applyStreamerRelay();
     nowPlayingActive = true;
     nowPlayingMenuVisitActive = false;
+    // Если стрим начался, пока пользователь сидел внутри пункта меню (Bass/High/Volume,
+    // Dimmer и т.д.) — без явного сброса ниже периодический блок "живого обновления"
+    // (loop(), 200мс, гейт на inSettingsMode/volumeOverlayActive, не на nowPlayingActive)
+    // продолжал бы перерисовывать ТОТ экран поверх/вместо только что нарисованного Now
+    // Playing на каждом же тике — экран "не отрисовывался нормально" именно поэтому.
+    // endVolumeOverlay() не вызываем — та сама планирует redrawCurrentScreen() (лишний кадр
+    // старого экрана прямо перед Now Playing), просто снимаем флаг напрямую
+    inSettingsMode = false;
+    volumeOverlayActive = false;
     lastRenderedText[0] = '\0'; // форсируем перерисовку блоком ниже на этом же тике
     lastRenderedSource[0] = '\0';
   } else if (!playingNow && wasPlaying) {
@@ -132,10 +141,12 @@ static void updateNowPlaying() {
       lastRenderedSource[sizeof(lastRenderedSource) - 1] = '\0';
       drawNowPlayingScreen();
     }
-    // Тиканье прогресс-бара — отдельно от блока выше: тот перерисовывает экран целиком только
-    // когда меняются текст/источник (редко), а позиция трека должна двигаться каждую секунду.
-    // Сама функция решает, рисовать ли что-то и как часто (см. updateNowPlayingProgress())
+    // Тиканье прогресс-бара/счётчика и бегущей строки — отдельно от блока выше: тот
+    // перерисовывает экран целиком только когда меняются текст/источник (редко), а эти два —
+    // каждую секунду/каждый шаг прокрутки. Обе функции сами решают, рисовать ли что-то и как
+    // часто (см. updateNowPlayingProgress()/updateNowPlayingTitleScroll())
     updateNowPlayingProgress();
+    updateNowPlayingTitleScroll();
   }
 
   if (nowPlayingMenuVisitActive && millis() - nowPlayingMenuVisitLastActivity > NOW_PLAYING_MENU_IDLE_TIMEOUT_MS) {
@@ -387,15 +398,33 @@ void loop() {
   // (см. ниже). Сам updateNowPlaying() (переключение Source/показ Now Playing) по-прежнему
   // имеет смысл только пока система включена — реле/дисплей обесточены в Standby
   esp32LinkPoll();
+
+  // Автовключение из Standby — ТОЛЬКО на фронт "не играло -> играет", а не на сам факт "сейчас
+  // играет" (раньше был чистый level-check — если выключить питание пультом ПОКА стрим уже
+  // идёт, esp32LinkIsPlaying() оставался true все следующие итерации, и система сама включалась
+  // обратно почти сразу же после выключения, будто кнопка Power не сработала; пользователь
+  // так и описал баг и сам нашёл обходной путь — пауза и повторный play ДЕЙСТВИТЕЛЬНО создают
+  // фронт и включают систему, что и подтвердило причину). wasPlayingAtStandbyEntry
+  // синхронизируется с ТЕКУЩИМ состоянием ровно в момент входа в Standby (см. ниже) — именно
+  // поэтому "стрим продолжается без остановки" после выключения больше не считается новым стартом
+  static bool wasPowerOff = false;
+  static bool wasPlayingAtStandbyEntry = false;
+  if (powerOff && !wasPowerOff) {
+    wasPlayingAtStandbyEntry = esp32LinkIsPlaying();
+  }
+  wasPowerOff = powerOff;
+
   if (powerOff) {
-    if (esp32LinkIsPlaying()) {
-      // Arylic начал играть, пока система была в Standby — включаемся тем же путём, что и
-      // ручной Power с пульта (см. IR_POWER в remote_control.cpp). updateNowPlaying() сама
+    bool playingNow = esp32LinkIsPlaying();
+    if (playingNow && !wasPlayingAtStandbyEntry) {
+      // Настоящий новый старт воспроизведения уже ПОСЛЕ выключения — включаемся тем же путём,
+      // что и ручной Power с пульта (см. IR_POWER в remote_control.cpp). updateNowPlaying() сама
       // подхватит уже true playingNow на следующей же итерации (теперь !powerOff) и включит
       // реле Streamer + покажет Now Playing — здесь только само включение
       powerOnDevices();
       powerOff = false;
     }
+    wasPlayingAtStandbyEntry = playingNow;
   } else {
     updateNowPlaying();
   }

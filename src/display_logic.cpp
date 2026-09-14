@@ -604,6 +604,39 @@ static void renderNowPlayingProgressBar(int filledWidth) {
   }
 }
 
+// "125000" -> "2:05" — то же самое, что fmtTime() на веб-странице (arylic_metadata.h), только
+// на стороне Mega. mm:ss достаточно — треки часами не измеряются
+static void formatTrackTime(long ms, char* out, size_t outSize) {
+  if (ms < 0) {
+    ms = 0;
+  }
+  long totalSeconds = ms / 1000;
+  long minutes = totalSeconds / 60;
+  long seconds = totalSeconds % 60;
+  snprintf(out, outSize, "%ld:%02ld", minutes, seconds);
+}
+
+// Строка статуса (NOW_PLAYING_STATUS_Y) — счётчик "1:32 / 3:50", когда позиция трека известна
+// (тот же filledWidth>=0, что решает, показывать ли бар выше — одно и то же условие, один и
+// тот же смысл: для AirPlay позиция не двигается вообще, см. project_arylic_airplay_no_metadata
+// в памяти), иначе просто "Playing" — общая функция для полной (drawNowPlayingScreen()) и
+// частичной (updateNowPlayingProgress()) перерисовки, как и у бара выше
+static void renderNowPlayingStatusText(int filledWidth) {
+  u8g2.setFont(NOW_PLAYING_STATUS_FONT);
+  u8g2.setCursor(NOW_PLAYING_STATUS_X, NOW_PLAYING_STATUS_Y);
+  if (filledWidth < 0) {
+    u8g2.print("Playing");
+    return;
+  }
+  char curText[8];
+  char lenText[8];
+  formatTrackTime(esp32LinkTrackPosMs() + (long)esp32LinkTrackPosAgeMs(), curText, sizeof(curText));
+  formatTrackTime(esp32LinkTrackLenMs(), lenText, sizeof(lenText));
+  u8g2.print(curText);
+  u8g2.print(" / ");
+  u8g2.print(lenText);
+}
+
 void drawNowPlayingScreen() {
   waitForDisplayRedrawGap();
 
@@ -641,11 +674,9 @@ void drawNowPlayingScreen() {
     u8g2.print(source);
   }
 
-  u8g2.setFont(NOW_PLAYING_STATUS_FONT);
-  u8g2.setCursor(NOW_PLAYING_STATUS_X, NOW_PLAYING_STATUS_Y);
-  u8g2.print("Playing");
-
-  renderNowPlayingProgressBar(nowPlayingProgressFilledWidth());
+  int filledWidth = nowPlayingProgressFilledWidth();
+  renderNowPlayingStatusText(filledWidth);
+  renderNowPlayingProgressBar(filledWidth);
 
   u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_SOURCE_Y);
   u8g2.print("Source: Streamer");
@@ -655,13 +686,16 @@ void drawNowPlayingScreen() {
   u8g2.sendBuffer();
 }
 
-// Для живого "тиканья" прогресс-бара без полной перерисовки экрана — тот же приём и та же
-// причина, что у animate*IconPartial() в animations/ (см. подробный комментарий там и в
-// CLAUDE.md, "Анимации-индикаторы пунктов меню"): периодическая ПОЛНАЯ перерисовка по таймеру
-// уже один раз ломала приём с ИК-пульта (полная передача экрана иногда "перебивала" передачу
-// свежей команды) — здесь та же логика, просто регион другой (прогресс-бар, не иконка)
+// Для живого "тиканья" прогресс-бара И счётчика времени без полной перерисовки экрана — тот
+// же приём и та же причина, что у animate*IconPartial() в animations/ (см. подробный комментарий
+// там и в CLAUDE.md, "Анимации-индикаторы пунктов меню"): периодическая ПОЛНАЯ перерисовка по
+// таймеру уже один раз ломала приём с ИК-пульта (полная передача экрана иногда "перебивала"
+// передачу свежей команды) — здесь та же логика, просто регион другой (строка статуса + бар,
+// не иконка). Оба обновляются вместе одним updateDisplayArea() — они всё равно меняются от
+// одних и тех же данных (позиции трека) синхронно, отдельные вызовы ничего бы не сэкономили
 void updateNowPlayingProgress() {
   static int lastFilledWidth = -2; // -2 - "ещё ни разу не рисовали", отличается от -1 (не показывать) и 0..WIDTH
+  static char lastStatusText[16] = "\x01"; // заведомо не совпадёт с реальным текстом — форсирует первую отрисовку
   static unsigned long lastPartialUpdate = 0;
 
   unsigned long now = millis();
@@ -671,21 +705,105 @@ void updateNowPlayingProgress() {
   }
 
   int filledWidth = nowPlayingProgressFilledWidth();
-  if (filledWidth == lastFilledWidth) {
-    return; // не дёргаем SPI, если полоска не сдвинулась ни на пиксель с прошлого раза
+  char statusText[16] = "Playing";
+  if (filledWidth >= 0) {
+    char curText[8];
+    formatTrackTime(esp32LinkTrackPosMs() + (long)esp32LinkTrackPosAgeMs(), curText, sizeof(curText));
+    // lenText не входит в статичный "статус" — общая длина трека не меняется от тика к тику,
+    // держать её в lastStatusText только удлиняло бы сравнение без пользы; текст всё равно
+    // рисуется целиком через renderNowPlayingStatusText() ниже
+    strncpy(statusText, curText, sizeof(statusText) - 1);
+  }
+
+  if (filledWidth == lastFilledWidth && strcmp(statusText, lastStatusText) == 0) {
+    return; // ни бар, ни счётчик не изменились с прошлого раза — не дёргаем SPI зря
   }
   lastFilledWidth = filledWidth;
+  strncpy(lastStatusText, statusText, sizeof(lastStatusText) - 1);
+  lastStatusText[sizeof(lastStatusText) - 1] = '\0';
   lastPartialUpdate = now;
 
   u8g2.setDrawColor(0);
-  u8g2.drawBox(NOW_PLAYING_PROGRESS_X, NOW_PLAYING_PROGRESS_Y, NOW_PLAYING_PROGRESS_WIDTH, NOW_PLAYING_PROGRESS_HEIGHT);
+  u8g2.drawBox(NOW_PLAYING_PROGRESS_X, NOW_PLAYING_STATUS_CLEAR_Y, NOW_PLAYING_PROGRESS_WIDTH, NOW_PLAYING_STATUS_CLEAR_HEIGHT);
   u8g2.setDrawColor(1);
+  renderNowPlayingStatusText(filledWidth);
   renderNowPlayingProgressBar(filledWidth);
 
   uint8_t tx = NOW_PLAYING_PROGRESS_X / 8;
   uint8_t tw = (NOW_PLAYING_PROGRESS_X + NOW_PLAYING_PROGRESS_WIDTH - 1) / 8 - tx + 1;
-  uint8_t ty = NOW_PLAYING_PROGRESS_Y / 8;
-  uint8_t th = (NOW_PLAYING_PROGRESS_Y + NOW_PLAYING_PROGRESS_HEIGHT - 1) / 8 - ty + 1;
+  uint8_t ty = NOW_PLAYING_STATUS_CLEAR_Y / 8;
+  uint8_t th = (NOW_PLAYING_STATUS_CLEAR_Y + NOW_PLAYING_STATUS_CLEAR_HEIGHT - 1) / 8 - ty + 1;
+  u8g2.updateDisplayArea(tx, ty, tw, th);
+  markPartialDisplayTransfer();
+}
+
+// Бегущая строка для названий, которые не помещаются целиком в NOW_PLAYING_TITLE_SCROLL_WIDTH
+// (см. константу в hardware_settings.h за тем, почему она уже, чем могла бы быть — не задевать
+// "bypass" в правом верхнем углу). Короткие названия просто печатаются статично в
+// drawNowPlayingScreen() и эта функция их не трогает (не тикает без надобности). Тот же приём
+// частичного обновления, что и у updateNowPlayingProgress() выше — тайлы, не весь экран
+void updateNowPlayingTitleScroll() {
+  static char lastScrolledText[ESP32_LINK_META_MAX_LEN + 1] = "\x01"; // форсирует сброс на первом вызове
+  static int scrollOffset = 0;
+  static unsigned long lastStepTime = 0;
+  static unsigned long lastPartialUpdate = 0;
+
+  const char* text = esp32LinkNowPlayingText();
+  if (strcmp(text, lastScrolledText) != 0) {
+    strncpy(lastScrolledText, text, sizeof(lastScrolledText) - 1);
+    lastScrolledText[sizeof(lastScrolledText) - 1] = '\0';
+    scrollOffset = 0;
+    lastStepTime = millis();
+  }
+
+  if (!text[0]) {
+    return; // нечего крутить (AirPlay — см. drawNowPlayingScreen())
+  }
+
+  u8g2.setFont(NOW_PLAYING_TITLE_FONT);
+  int textWidth = u8g2.getStrWidth(text);
+  if (textWidth <= NOW_PLAYING_TITLE_SCROLL_WIDTH) {
+    return; // помещается целиком — обычная статичная отрисовка уже сделала своё дело
+  }
+
+  unsigned long now = millis();
+  if (now - lastStepTime < NOW_PLAYING_TITLE_SCROLL_STEP_MS) {
+    return; // ещё не время сдвигать на следующий пиксель
+  }
+  lastStepTime = now;
+  int cycleWidth = textWidth + NOW_PLAYING_TITLE_SCROLL_GAP_PX;
+  scrollOffset = (scrollOffset + 1) % cycleWidth;
+
+  unsigned long lastAnyDisplayTransfer = max(lastPartialUpdate, lastMenuDrawTime());
+  if (now - lastAnyDisplayTransfer < DISPLAY_REDRAW_MIN_GAP_MS) {
+    return; // не долбим SPI чаще общего минимального зазора
+  }
+  lastPartialUpdate = now;
+
+  // Запас по вертикали под ascender/descender шрифта — NOW_PLAYING_TITLE_Y (16) это баслайн,
+  // не верх глифа
+  const int clearTop = NOW_PLAYING_TITLE_Y - 9;
+  const int clearHeight = 11;
+
+  u8g2.setClipWindow(NOW_PLAYING_TITLE_X, clearTop, NOW_PLAYING_TITLE_X + NOW_PLAYING_TITLE_SCROLL_WIDTH, clearTop + clearHeight);
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(NOW_PLAYING_TITLE_X, clearTop, NOW_PLAYING_TITLE_SCROLL_WIDTH, clearHeight);
+  u8g2.setDrawColor(1);
+  u8g2.setCursor(NOW_PLAYING_TITLE_X - scrollOffset, NOW_PLAYING_TITLE_Y);
+  u8g2.print(text);
+  // Второй экземпляр внахлёст на цикл вперёд — чтобы зацикливание выглядело непрерывным (новый
+  // текст "въезжает" с правого края витрины, пока старый ещё "выезжает" с левого), не рисуем,
+  // если он всё равно не попадает в видимое окно
+  if (scrollOffset > cycleWidth - NOW_PLAYING_TITLE_SCROLL_WIDTH) {
+    u8g2.setCursor(NOW_PLAYING_TITLE_X - scrollOffset + cycleWidth, NOW_PLAYING_TITLE_Y);
+    u8g2.print(text);
+  }
+  u8g2.setMaxClipWindow();
+
+  uint8_t tx = NOW_PLAYING_TITLE_X / 8;
+  uint8_t tw = (NOW_PLAYING_TITLE_X + NOW_PLAYING_TITLE_SCROLL_WIDTH - 1) / 8 - tx + 1;
+  uint8_t ty = clearTop / 8;
+  uint8_t th = (clearTop + clearHeight - 1) / 8 - ty + 1;
   u8g2.updateDisplayArea(tx, ty, tw, th);
   markPartialDisplayTransfer();
 }

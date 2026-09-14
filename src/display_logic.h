@@ -47,6 +47,11 @@ void drawNowPlayingScreen();
 // свой ход, если недавно была любая другая передача на дисплей, и если полоска не сдвинулась
 // ни на пиксель с прошлого раза (см. .cpp)
 void updateNowPlayingProgress();
+// Бегущая строка для длинного названия трека — тот же частичный приём, что и у
+// updateNowPlayingProgress(), вызывать из loop() рядом с ней (то же условие: nowPlayingActive
+// && !nowPlayingMenuVisitActive && !isMuted). Сама ничего не делает, пока название помещается
+// на экран целиком без прокрутки
+void updateNowPlayingTitleScroll();
 void displayMessage(const char* message);
 // Применяет displayBrightness (main.h, пункт "Dimmer", вторая строка) как реальный
 // контраст OLED-дисплея (0-100% -> u8g2.setContrast(0-255))
