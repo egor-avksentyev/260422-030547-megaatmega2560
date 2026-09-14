@@ -110,9 +110,15 @@ void handleRemoteInput() {
 
     // Пока показан полноэкранный Now Playing (см. main.h/esp32_link.h) — тот же принцип, что
     // у Mute выше: не бороться за экран с этим режимом. Enter — единственная кнопка, которая
-    // из него выпускает (см. case IR_ENTER ниже); Power/Mute продолжают работать всегда
+    // из него выпускает (см. case IR_ENTER ниже); Power/Mute продолжают работать всегда.
+    // Up/Down тоже пропущены — регулировка громкости пультом (см. case IR_UP/IR_DOWN, ветка
+    // "иначе" = карусель — inSettingsMode здесь всегда false, см. updateNowPlaying() в
+    // main.cpp, так что Up/Down естественно попадают именно в неё, отдельного кейса под Now
+    // Playing не нужно). Экран временного показа Volume защищён от порчи тикерами
+    // Now Playing тем же способом, что и ручное вращение кноба — см. main.cpp
     if (nowPlayingActive && !nowPlayingMenuVisitActive
-        && irCommand != IR_ENTER && irCommand != IR_MUTE && irCommand != IR_POWER) {
+        && irCommand != IR_ENTER && irCommand != IR_MUTE && irCommand != IR_POWER
+        && irCommand != IR_UP && irCommand != IR_DOWN) {
       return;
     }
     refreshNowPlayingMenuActivity(); // Любая прошедшая сюда команда — активность в "визите" из Now Playing

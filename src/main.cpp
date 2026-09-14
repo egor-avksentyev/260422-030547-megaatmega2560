@@ -139,14 +139,18 @@ static void updateNowPlaying() {
   wasPlaying = playingNow;
 
   // knobIndicatorActiveItem != -1 — пользователь сейчас крутит Bass/High/Volume РУКОЙ (см.
-  // блок обнаружения в loop()), и физический экран прямо сейчас занят полноэкранным
-  // drawArrowIndicator() того пункта, а не Now Playing — nowPlayingActive при этом остаётся
-  // true (это состояние не трогается), так что без этой проверки текстовый редрав и оба
-  // тикера ниже (updateNowPlayingProgress()/updateNowPlayingTitleScroll()) продолжали бы
-  // частично перерисовывать буфер поверх ЭТОГО экрана, ломая его несвязанными фрагментами
-  // прогресс-бара/бегущей строки. Как только рукой крутить перестают, тот же блок в loop()
-  // сам возвращает drawNowPlayingScreen() — тикать снова можно с чистого листа
-  if (nowPlayingActive && !nowPlayingMenuVisitActive && !isMuted && knobIndicatorActiveItem == -1) {
+  // блок обнаружения в loop()); volumeOverlayActive — то же самое, но с пульта (Up/Down,
+  // теперь разрешены и во время Now Playing, см. remote_control.cpp). В обоих случаях
+  // физический экран прямо сейчас занят чужим полноэкранным drawArrowIndicator(), а не Now
+  // Playing — nowPlayingActive при этом остаётся true (это состояние не трогается), так что
+  // без этой проверки текстовый редрав и оба тикера ниже (updateNowPlayingProgress()/
+  // updateNowPlayingTitleScroll()) продолжали бы частично перерисовывать буфер поверх ЭТОГО
+  // экрана, ломая его несвязанными фрагментами прогресс-бара/бегущей строки. Как только
+  // отпускают ручку/кнопку, оба пути сами возвращают drawNowPlayingScreen() (см.
+  // knobIndicatorLastMovementTime в loop() и redrawCurrentScreen() ниже по файлу) — тикать
+  // снова можно с чистого листа
+  if (nowPlayingActive && !nowPlayingMenuVisitActive && !isMuted
+      && knobIndicatorActiveItem == -1 && !volumeOverlayActive) {
     // Источник (Spotify/AirPlay/...) сравнивается отдельно от текста трека — на AirPlay текст
     // всегда пуст (см. project_arylic_airplay_no_metadata в памяти), так что смена источника
     // без смены текста иначе осталась бы незамеченной и экран не перерисовался бы
@@ -231,9 +235,16 @@ int eqMenuIndex() {
 
 // Перерисовывает экран, который сейчас должен быть виден по inSettingsMode/currentMenuItem —
 // нужно, чтобы после отпускания Up/Down (глобальный шорткат громкости, см. beginVolumeOverlay())
-// вернуть на экран именно то, что было до него (карусель или конкретный экран настройки)
+// вернуть на экран именно то, что было до него (карусель или конкретный экран настройки).
+// Now Playing проверяется ПЕРВЫМ, отдельно от inSettingsMode/currentMenuItem — пока он активен,
+// inSettingsMode всегда false (см. updateNowPlaying()), так что без этой проверки сюда попадали
+// бы в ветку карусели (drawMenu()) вместо возврата на сам Now Playing — например именно так
+// заканчивался временный показ Volume с пульта (Up/Down), если его вызвали прямо с экрана
+// Now Playing (см. remote_control.cpp)
 void redrawCurrentScreen() {
-  if (!inSettingsMode) {
+  if (nowPlayingActive && !nowPlayingMenuVisitActive) {
+    drawNowPlayingScreen();
+  } else if (!inSettingsMode) {
     drawMenu();
   } else if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
     drawToggleSwitch(settings[currentMenuItem] == 1);
