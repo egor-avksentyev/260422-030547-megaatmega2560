@@ -516,7 +516,11 @@ void drawInfoScreen() {
   strcpy(rowText[INFO_STREAMER_ROW_INDEX], "Streamer");
   snprintf(rowText[4], sizeof(rowText[0]), "Setup: %s", ESP32_SETUP_IP_STRING);
   const char* controlIp = esp32LinkControlIp();
-  snprintf(rowText[5], sizeof(rowText[0]), "Control: %s", controlIp[0] ? controlIp : "--");
+  // "IP:", не "Control:" — тот же самый динамический адрес ESP32, что и раньше, просто
+  // подпись короче: "Control: 255.255.255.255" не влезает в ширину экрана этим шрифтом (нет
+  // места под перенос на вторую строку — экран и так впритык под 3 строки Info), а "IP:"
+  // укладывается для любого валидного IPv4
+  snprintf(rowText[5], sizeof(rowText[0]), "IP: %s", controlIp[0] ? controlIp : "--");
   snprintf(rowText[6], sizeof(rowText[0]), "Arylic: %s",
     !esp32LinkArylicKnown() ? "?" : (esp32LinkArylicOk() ? "ok" : "disconnected"));
 
