@@ -546,15 +546,6 @@ void drawInfoScreen() {
     }
   }
 
-  // "N-M/COUNT" в углу — подсказка, что список можно листать дальше (7 строк, видно 3 разом)
-  u8g2.setFont(INFO_SCROLL_INDICATOR_FONT);
-  u8g2.setCursor(INFO_SCROLL_INDICATOR_X, INFO_SCROLL_INDICATOR_Y);
-  u8g2.print(windowStart + 1);
-  u8g2.print("-");
-  u8g2.print(min(windowStart + INFO_LIST_VISIBLE_ROWS, INFO_ROW_COUNT));
-  u8g2.print("/");
-  u8g2.print(INFO_ROW_COUNT);
-
   // AC-напряжение — своей строкой в углу, как было исходно, не часть списка выше
   u8g2.setFont(INFO_VOLTAGE_FONT);
   u8g2.setCursor(INFO_VOLTAGE_X, INFO_VOLTAGE_Y);
