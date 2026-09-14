@@ -69,6 +69,17 @@ static unsigned long nowPlayingMenuVisitLastActivity = 0;
 // реле (main.h/relay.cpp), не часть Source, поэтому здесь запоминается именно его состояние,
 // а не какой-то пункт Source
 static bool streamerWasOnBeforePlayback = false;
+// Фронт "не играло -> играет" внутри updateNowPlaying() (не тот же смысл, что у
+// wasPlayingAtStandbyEntry в loop() ниже — та про сам факт входа/выхода из Standby). Раньше
+// был static-переменной прямо внутри updateNowPlaying() — из-за того, что эта функция вообще
+// не вызывается, пока powerOff (см. loop()), значение "зависало" с момента ДО выключения:
+// если стрим уже играл на момент выключения, wasPlaying оставался true всё время в Standby, и
+// после автопробуждения (см. loop()) playingNow(true) && !wasPlaying(уже true) не считалось
+// новым стартом — nowPlayingActive/реле Streamer/сам экран Now Playing никогда не включались,
+// хотя автовключение сработало и реле питания щёлкнуло. Теперь file-scope — loop() явно
+// сбрасывает её в false перед автовключением из Standby (см. там же), форсируя честный
+// восходящий фронт на следующем же вызове updateNowPlaying()
+static bool wasPlaying = false;
 
 void exitNowPlayingToMenu() {
   nowPlayingMenuVisitActive = true;
@@ -88,7 +99,6 @@ void refreshNowPlayingMenuActivity() {
 // перерисовывает полноэкранный Now Playing, когда меняется метадата, и возвращает из
 // "визита" в меню по таймауту простоя. Вызывается из loop() пока !powerOff — см. там же
 static void updateNowPlaying() {
-  static bool wasPlaying = false;
   static char lastRenderedText[ESP32_LINK_META_MAX_LEN + 1] = "";
   static char lastRenderedSource[ESP32_LINK_SOURCE_MAX_LEN + 1] = "";
 
@@ -423,6 +433,12 @@ void loop() {
       // реле Streamer + покажет Now Playing — здесь только само включение
       powerOnDevices();
       powerOff = false;
+      // Без этого сброса updateNowPlaying() увидела бы playingNow(true) && !wasPlaying — а
+      // wasPlaying (см. её объявление выше по файлу) всё ещё "завис" со значения true с МОМЕНТА
+      // ДО выключения (сам стрим ведь не останавливался) — восходящий фронт внутри неё
+      // никогда бы не сработал, реле Streamer/nowPlayingActive/сам экран Now Playing не
+      // включились бы, хотя автовключение (выше) уже щёлкнуло питанием
+      wasPlaying = false;
     }
     wasPlayingAtStandbyEntry = playingNow;
   } else {

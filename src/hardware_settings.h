@@ -393,7 +393,6 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define NOW_PLAYING_TITLE_FONT u8g2_font_ncenB08_tr
 #define NOW_PLAYING_TITLE_X 4
 #define NOW_PLAYING_TITLE_Y 16
-#define NOW_PLAYING_TITLE_MAX_CHARS 20 // Верхняя граница буфера строки — не влияет на прокрутку ниже, та меряет реальную ширину в пикселях
 // Бегущая строка для названий, которые не помещаются целиком (см. updateNowPlayingTitleScroll()
 // в display_logic.cpp) — короткие названия просто рисуются статично, эта прокрутка включается
 // только когда реальная ширина текста (u8g2.getStrWidth()) больше NOW_PLAYING_TITLE_SCROLL_WIDTH.

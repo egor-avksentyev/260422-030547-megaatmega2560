@@ -637,18 +637,48 @@ static void renderNowPlayingStatusText(int filledWidth) {
   u8g2.print(lenText);
 }
 
+// Общая отрисовка названия трека с учётом прокрутки — используется и полной перерисовкой
+// (drawNowPlayingScreen(), scrollOffset=0 — там название только начинает отображаться), и
+// частичным тиканьем (updateNowPlayingTitleScroll()). Раньше drawNowPlayingScreen() печатала
+// длинное название СЫРЫМ, без обрезки по ширине — то, что не влезало в
+// NOW_PLAYING_TITLE_SCROLL_WIDTH, всё равно уходило в буфер и оставалось на экране НАВСЕГДА
+// (частичные тики ниже трогают только левые NOW_PLAYING_TITLE_SCROLL_WIDTH пикселей, тот
+// "хвost" справа никто больше не перерисовывал) — выглядело как "часть текста застряла
+// статично сбоку". Теперь обе стороны рисуют через один и тот же clip window, ничего
+// лишнего в буфер не попадает с самого начала
+static void renderNowPlayingTitleClipped(const char* text, int scrollOffset) {
+  u8g2.setFont(NOW_PLAYING_TITLE_FONT);
+  int textWidth = u8g2.getStrWidth(text);
+  if (textWidth <= NOW_PLAYING_TITLE_SCROLL_WIDTH) {
+    u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_TITLE_Y);
+    u8g2.print(text);
+    return;
+  }
+
+  // Запас по вертикали под ascender/descender шрифта — NOW_PLAYING_TITLE_Y (16) это баслайн,
+  // не верх глифа
+  const int clipTop = NOW_PLAYING_TITLE_Y - 9;
+  const int clipHeight = 11;
+  u8g2.setClipWindow(NOW_PLAYING_TITLE_X, clipTop, NOW_PLAYING_TITLE_X + NOW_PLAYING_TITLE_SCROLL_WIDTH, clipTop + clipHeight);
+  u8g2.setCursor(NOW_PLAYING_TITLE_X - scrollOffset, NOW_PLAYING_TITLE_Y);
+  u8g2.print(text);
+  // Второй экземпляр внахлёст на цикл вперёд — чтобы зацикливание выглядело непрерывным (новый
+  // текст "въезжает" с правого края витрины, пока старый ещё "выезжает" с левого), не рисуем,
+  // если он всё равно не попадает в видимое окно
+  int cycleWidth = textWidth + NOW_PLAYING_TITLE_SCROLL_GAP_PX;
+  if (scrollOffset > cycleWidth - NOW_PLAYING_TITLE_SCROLL_WIDTH) {
+    u8g2.setCursor(NOW_PLAYING_TITLE_X - scrollOffset + cycleWidth, NOW_PLAYING_TITLE_Y);
+    u8g2.print(text);
+  }
+  u8g2.setMaxClipWindow();
+}
+
 void drawNowPlayingScreen() {
   waitForDisplayRedrawGap();
 
   u8g2.clearBuffer();
 
-  // Грубое усечение по числу символов (не по реальной ширине в пикселях) — MEGA_LINK_META_MAX_LEN
-  // (40) на стороне ESP32 всё равно не влезает в 128px этим шрифтом; полноценный перенос
-  // строк/бинарный поиск по getStrWidth() тут не стоит своей сложности, см. README ESP32-проекта
   const char* text = esp32LinkNowPlayingText();
-  char truncated[NOW_PLAYING_TITLE_MAX_CHARS + 1];
-  strncpy(truncated, text, NOW_PLAYING_TITLE_MAX_CHARS);
-  truncated[NOW_PLAYING_TITLE_MAX_CHARS] = '\0';
 
   // Источник воспроизведения (Spotify/AirPlay/...) — независимая от текста трека строка:
   // AirPlay на этом устройстве не отдаёт Artist/Title вообще (см. project_arylic_airplay_
@@ -657,14 +687,16 @@ void drawNowPlayingScreen() {
   const char* source = esp32LinkStreamingSource();
   bool isAirPlay = strcmp(source, "AirPlay") == 0;
 
-  u8g2.setFont(NOW_PLAYING_TITLE_FONT);
-  u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_TITLE_Y);
-  if (truncated[0]) {
-    u8g2.print(truncated);
+  if (text[0]) {
+    // scrollOffset=0 — прокрутка (если название не влезает) только начинается, тем же 0, с
+    // которого стартует и updateNowPlayingTitleScroll() при смене текста
+    renderNowPlayingTitleClipped(text, 0);
   } else if (!isAirPlay) {
     // "..." — самый обычный "ещё не пришла метадата"/загрузка. Для AirPlay текста не будет
     // никогда (не просто пока не пришло) — строка источника ниже и так скажет "AirPlay",
     // рядом с "..." это выглядело бы как два противоречащих друг другу сообщения
+    u8g2.setFont(NOW_PLAYING_TITLE_FONT);
+    u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_TITLE_Y);
     u8g2.print("...");
   }
 
@@ -785,20 +817,10 @@ void updateNowPlayingTitleScroll() {
   const int clearTop = NOW_PLAYING_TITLE_Y - 9;
   const int clearHeight = 11;
 
-  u8g2.setClipWindow(NOW_PLAYING_TITLE_X, clearTop, NOW_PLAYING_TITLE_X + NOW_PLAYING_TITLE_SCROLL_WIDTH, clearTop + clearHeight);
   u8g2.setDrawColor(0);
   u8g2.drawBox(NOW_PLAYING_TITLE_X, clearTop, NOW_PLAYING_TITLE_SCROLL_WIDTH, clearHeight);
   u8g2.setDrawColor(1);
-  u8g2.setCursor(NOW_PLAYING_TITLE_X - scrollOffset, NOW_PLAYING_TITLE_Y);
-  u8g2.print(text);
-  // Второй экземпляр внахлёст на цикл вперёд — чтобы зацикливание выглядело непрерывным (новый
-  // текст "въезжает" с правого края витрины, пока старый ещё "выезжает" с левого), не рисуем,
-  // если он всё равно не попадает в видимое окно
-  if (scrollOffset > cycleWidth - NOW_PLAYING_TITLE_SCROLL_WIDTH) {
-    u8g2.setCursor(NOW_PLAYING_TITLE_X - scrollOffset + cycleWidth, NOW_PLAYING_TITLE_Y);
-    u8g2.print(text);
-  }
-  u8g2.setMaxClipWindow();
+  renderNowPlayingTitleClipped(text, scrollOffset);
 
   uint8_t tx = NOW_PLAYING_TITLE_X / 8;
   uint8_t tw = (NOW_PLAYING_TITLE_X + NOW_PLAYING_TITLE_SCROLL_WIDTH - 1) / 8 - tx + 1;
