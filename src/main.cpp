@@ -64,17 +64,19 @@ static int knobOverlayLastDrawnValue = -32000; // не перерисовыва�
 bool nowPlayingActive = false;
 bool nowPlayingMenuVisitActive = false;
 static unsigned long nowPlayingMenuVisitLastActivity = 0;
-// Было ли реле Streamer уже включено ДО того, как Arylic начал играть — восстанавливается,
-// когда воспроизведение останавливается (см. updateNowPlaying() ниже). Streamer — независимое
-// реле (main.h/relay.cpp), не часть Source, поэтому здесь запоминается именно его состояние,
-// а не какой-то пункт Source
-static bool streamerWasOnBeforePlayback = false;
-
+// Реле Streamer теперь СТРОГО следует за play/pause — включено, пока играет, выключено, как
+// только не играет, без попытки "запомнить и восстановить" какое-то состояние до начала
+// воспроизведения. Раньше здесь было streamerWasOnBeforePlayback (сохраняло состояние ДО
+// плейбэка и восстанавливало его на паузе) — источник целого каскада багов: если это "до"-
+// состояние хоть раз залипало на true (например из-за более раннего EEPROM-бага), реле после
+// каждой паузы "честно" восстанавливалось обратно в залипшее true, выглядя так, будто вообще
+// не реагирует на паузу. Пользователь явно предпочёл более простую и предсказуемую семантику —
+// прямое соответствие, без исключений
 bool streamerPersistentPreference() {
-  // Пока играет (nowPlayingActive), streamerRelayOn может быть временно поднят автоматикой —
-  // настоящая настройка в этот момент лежит в streamerWasOnBeforePlayback (см. её объявление
-  // выше). Иначе (не играет) streamerRelayOn и есть сама настройка, без всяких оговорок
-  return nowPlayingActive ? streamerWasOnBeforePlayback : streamerRelayOn;
+  // Пока играет (nowPlayingActive) — реле поднято автоматикой, это не пользовательская
+  // настройка, сохранять как настройку нечего (false, а не текущее true). Иначе — streamerRelayOn
+  // и есть сама настройка (значение пункта меню Info, без всяких оговорок)
+  return nowPlayingActive ? false : streamerRelayOn;
 }
 // Фронт "не играло -> играет" внутри updateNowPlaying() (не тот же смысл, что у
 // wasPlayingAtStandbyEntry в loop() ниже — та про сам факт входа/выхода из Standby). Раньше
@@ -112,9 +114,7 @@ static void updateNowPlaying() {
   bool playingNow = esp32LinkIsPlaying();
 
   if (playingNow && !wasPlaying) {
-    // Восходящий фронт: Arylic начал играть — запоминаем, было ли реле Streamer уже
-    // включено (тогда восстановление ниже будет безобидным no-op), и включаем его
-    streamerWasOnBeforePlayback = streamerRelayOn;
+    // Восходящий фронт: Arylic начал играть — включаем реле Streamer
     streamerRelayOn = true;
     applyStreamerRelay();
     nowPlayingActive = true;
@@ -131,10 +131,10 @@ static void updateNowPlaying() {
     lastRenderedText[0] = '\0'; // форсируем перерисовку блоком ниже на этом же тике
     lastRenderedSource[0] = '\0';
   } else if (!playingNow && wasPlaying) {
-    // Нисходящий фронт: пауза/стоп — возвращаем прежнее состояние реле Streamer и уходим в
-    // обычную карусель, независимо от того, был показан полноэкранный Now Playing или
-    // пользователь уже "гостил" в меню (nowPlayingMenuVisitActive)
-    streamerRelayOn = streamerWasOnBeforePlayback;
+    // Нисходящий фронт: пауза/стоп — выключаем реле Streamer и уходим в обычную карусель,
+    // независимо от того, был показан полноэкранный Now Playing или пользователь уже
+    // "гостил" в меню (nowPlayingMenuVisitActive)
+    streamerRelayOn = false;
     applyStreamerRelay();
     nowPlayingActive = false;
     nowPlayingMenuVisitActive = false;
