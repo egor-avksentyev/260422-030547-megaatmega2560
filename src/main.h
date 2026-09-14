@@ -100,6 +100,15 @@ void refreshNowPlayingMenuActivity();
 // живёт отдельной глобальной переменной здесь, как isMuted
 extern bool streamerRelayOn;
 
+// Настоящая пользовательская настройка реле Streamer — то, что нужно сохранять в EEPROM при
+// выключении (см. saveStreamerStateOnShutdown() в on_off_logic.cpp), а НЕ streamerRelayOn
+// напрямую: пока играет Arylic (nowPlayingActive), streamerRelayOn может быть временно
+// поднят автоматикой (см. updateNowPlaying() в main.cpp) поверх реальной пользовательской
+// настройки — если выключить питание именно в этот момент, сохранять нужно то, что было ДО
+// автовключения, иначе при следующем включении реле поднималось бы всегда, независимо от
+// того, играет ли что-то на самом деле
+bool streamerPersistentPreference();
+
 // Двухуровневая навигация энкодером внутри Info — тот же приём, что dimmerRowLocked у
 // Dimmer (см. checkEncoderButton() в encoder.cpp): пока false, вращение энкодера (само
 // колесо, не пульт) просто двигает курсор по строкам списка, не применяя ничего. Короткий

@@ -69,6 +69,13 @@ static unsigned long nowPlayingMenuVisitLastActivity = 0;
 // реле (main.h/relay.cpp), не часть Source, поэтому здесь запоминается именно его состояние,
 // а не какой-то пункт Source
 static bool streamerWasOnBeforePlayback = false;
+
+bool streamerPersistentPreference() {
+  // Пока играет (nowPlayingActive), streamerRelayOn может быть временно поднят автоматикой —
+  // настоящая настройка в этот момент лежит в streamerWasOnBeforePlayback (см. её объявление
+  // выше). Иначе (не играет) streamerRelayOn и есть сама настройка, без всяких оговорок
+  return nowPlayingActive ? streamerWasOnBeforePlayback : streamerRelayOn;
+}
 // Фронт "не играло -> играет" внутри updateNowPlaying() (не тот же смысл, что у
 // wasPlayingAtStandbyEntry в loop() ниже — та про сам факт входа/выхода из Standby). Раньше
 // был static-переменной прямо внутри updateNowPlaying() — из-за того, что эта функция вообще

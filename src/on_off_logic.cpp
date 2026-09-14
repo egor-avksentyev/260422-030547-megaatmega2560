@@ -196,7 +196,12 @@ struct SavedStreamerState {
 #define SAVED_STREAMER_MAGIC 0x57EA
 
 void saveStreamerStateOnShutdown() {
-  SavedStreamerState data = {SAVED_STREAMER_MAGIC, (uint8_t)(streamerRelayOn ? 1 : 0)};
+  // НЕ streamerRelayOn напрямую — если выключить питание прямо во время воспроизведения, это
+  // поле временно поднято автоматикой (см. streamerPersistentPreference() в main.h за
+  // подробным объяснением), а не отражает настоящую пользовательскую настройку. Раньше
+  // сохранялось именно оно — из-за этого реле включалось при каждом следующем включении
+  // питания независимо от того, играет ли что-то на самом деле в этот момент
+  SavedStreamerState data = {SAVED_STREAMER_MAGIC, (uint8_t)(streamerPersistentPreference() ? 1 : 0)};
   EEPROM.put(EEPROM_STREAMER_STATE_ADDR, data);
 }
 
