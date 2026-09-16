@@ -275,6 +275,11 @@ void powerOffDevices() {
 }
 
 void powerOnDevices() {
+  // Сброс фронт-детектора Now Playing (main.cpp) — ДО всего остального, чтобы уже на первой
+  // же итерации updateNowPlaying() после включения честно увидеть восходящий фронт "не играло ->
+  // играет", даже если PLAY:1 от ESP32 придёт очень быстро (см. resetNowPlayingEdgeState())
+  resetNowPlayingEdgeState();
+
   // Включение всех подключенных устройств
   u8g2.setPowerSave(0); // Включаем дисплей
   powerOnScreen(); // Отображаем "POWER ON"

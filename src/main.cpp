@@ -79,15 +79,16 @@ bool streamerPersistentPreference() {
   return nowPlayingActive ? false : streamerRelayOn;
 }
 // Фронт "не играло -> играет" внутри updateNowPlaying() (не тот же смысл, что у
-// wasPlayingAtStandbyEntry в loop() ниже — та про сам факт входа/выхода из Standby). Раньше
-// был static-переменной прямо внутри updateNowPlaying() — из-за того, что эта функция вообще
-// не вызывается, пока powerOff (см. loop()), значение "зависало" с момента ДО выключения:
-// если стрим уже играл на момент выключения, wasPlaying оставался true всё время в Standby, и
-// после автопробуждения (см. loop()) playingNow(true) && !wasPlaying(уже true) не считалось
-// новым стартом — nowPlayingActive/реле Streamer/сам экран Now Playing никогда не включались,
-// хотя автовключение сработало и реле питания щёлкнуло. Теперь file-scope — loop() явно
-// сбрасывает её в false перед автовключением из Standby (см. там же), форсируя честный
-// восходящий фронт на следующем же вызове updateNowPlaying()
+// wasPlayingAtStandbyEntry в loop() ниже — та про сам факт входа/выхода из Standby). Была
+// static-переменной прямо внутри updateNowPlaying() — из-за того, что эта функция вообще не
+// вызывается, пока powerOff (см. loop()), значение "зависало" с момента ДО выключения: если
+// стрим уже играл на момент выключения, wasPlaying оставался true всё время в Standby, и после
+// включения playingNow(true) && !wasPlaying(уже true) не считалось новым стартом —
+// nowPlayingActive/реле Streamer/сам экран Now Playing не включались, хотя питание включилось
+// и PLAY:1 от ESP32 уже пришёл. Теперь file-scope — powerOnDevices() (on_off_logic.cpp) сама
+// сбрасывает её в false через resetNowPlayingEdgeState() при КАЖДОМ включении (авто из Standby,
+// ручной IR_POWER, CMD:P с веб-страницы — все три пути), форсируя честный восходящий фронт на
+// следующем же вызове updateNowPlaying()
 static bool wasPlaying = false;
 
 void exitNowPlayingToMenu() {
@@ -101,6 +102,10 @@ void refreshNowPlayingMenuActivity() {
   if (nowPlayingMenuVisitActive) {
     nowPlayingMenuVisitLastActivity = millis();
   }
+}
+
+void resetNowPlayingEdgeState() {
+  wasPlaying = false;
 }
 
 // Опрашивает esp32_link (esp32LinkPoll() дёргает вызывающая сторона отдельно — здесь только
@@ -464,14 +469,8 @@ void loop() {
       // что и ручной Power с пульта (см. IR_POWER в remote_control.cpp). updateNowPlaying() сама
       // подхватит уже true playingNow на следующей же итерации (теперь !powerOff) и включит
       // реле Streamer + покажет Now Playing — здесь только само включение
-      powerOnDevices();
+      powerOnDevices(); // Сама сбрасывает фронт-детектор wasPlaying (см. resetNowPlayingEdgeState())
       powerOff = false;
-      // Без этого сброса updateNowPlaying() увидела бы playingNow(true) && !wasPlaying — а
-      // wasPlaying (см. её объявление выше по файлу) всё ещё "завис" со значения true с МОМЕНТА
-      // ДО выключения (сам стрим ведь не останавливался) — восходящий фронт внутри неё
-      // никогда бы не сработал, реле Streamer/nowPlayingActive/сам экран Now Playing не
-      // включились бы, хотя автовключение (выше) уже щёлкнуло питанием
-      wasPlaying = false;
     }
     wasPlayingAtStandbyEntry = playingNow;
   } else {

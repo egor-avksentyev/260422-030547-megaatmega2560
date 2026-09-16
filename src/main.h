@@ -92,6 +92,15 @@ void exitNowPlayingToMenu();
 // nowPlayingMenuVisitActive. Ничего не делает, если сейчас не тот случай
 void refreshNowPlayingMenuActivity();
 
+// Сбрасывает внутренний "было ли уже играющим" фронт-детектор updateNowPlaying() — вызывать
+// из powerOnDevices() (on_off_logic.cpp) перед тем, как питание фактически включится. Без
+// этого сброса, если музыка играла уже НА МОМЕНТ выключения (через IR_POWER/CMD:P — в отличие
+// от автовключения из Standby в loop(), которое само это учитывает), updateNowPlaying() после
+// включения может ни разу не увидеть восходящий фронт "не играло -> играет" — Now Playing/
+// Streamer не включатся, хотя PLAY:1 от ESP32 уже пришёл (тот же класс бага, что описан у
+// wasPlaying в main.cpp, только для ручного включения, не автоматического)
+void resetNowPlayingEdgeState();
+
 // Реле Streamer (relay.cpp, applyStreamerRelay()) — независимая строка "Streamer" внутри
 // пункта меню Info (не взаимоисключающая с Source, см. hardware_settings.h у
 // STREAMER_RELAY_PIN). Курсор внутри списка Info хранится как обычно в
