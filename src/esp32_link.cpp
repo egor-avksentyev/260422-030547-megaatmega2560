@@ -65,12 +65,15 @@ static void redrawAfterMuteOrPower() {
 static void executeWebCommand(char letter) {
   if (nowPlayingActive && !nowPlayingMenuVisitActive) {
     // Тот же гейт, что в remote_control.cpp/encoder.cpp — Enter выпускает в меню, Mute/Power
-    // работают всегда, остальное игнорируется, пока показан полноэкранный Now Playing
+    // работают всегда, Up/Down тоже пропущены (регулировка громкости с веб-страницы во время
+    // Now Playing — см. тот же пропуск для IR_UP/IR_DOWN в remote_control.cpp, раньше здесь не
+    // был продублирован, из-за чего громкость с пульта работала, а с веб-страницы — нет),
+    // остальное игнорируется, пока показан полноэкранный Now Playing
     if (letter == 'E') {
       exitNowPlayingToMenu();
       return;
     }
-    if (letter != 'M' && letter != 'P') {
+    if (letter != 'M' && letter != 'P' && letter != 'U' && letter != 'D') {
       return;
     }
   } else {
@@ -320,7 +323,17 @@ static void handleLine(char* line) {
     strncpy(controlIp, line + 3, sizeof(controlIp) - 1);
     controlIp[sizeof(controlIp) - 1] = '\0';
   } else if (strncmp(line, "PLAY:", 5) == 0) {
-    playing = (line[5] == '1');
+    // Строго "PLAY:0"/"PLAY:1" целиком (6 символов), не просто один байт после префикса —
+    // подтверждено живьём 2026-09-18: strip.show() у NeoPixel на AVR отключает прерывания на
+    // время передачи (обязательное требование тайминга WS2812), а приём UART живёт на
+    // прерывании — на 115200 бод 64-байтный буфер Serial2 наполняется всего за ~5мс, этого
+    // достаточно, чтобы редкое совпадение с обновлением колец (каждые ~200мс, см. main.cpp)
+    // потеряло несколько байт и склеило "PLAY:1" со следующим "POS:..." в "PLAY:POS4874186848"
+    // — line[5] тогда становится 'P' от "POS", что раньше читалось как "не 1" = false. Битую
+    // строку теперь просто игнорируем, а не гадаем по одному байту
+    if ((line[5] == '0' || line[5] == '1') && line[6] == '\0') {
+      playing = (line[5] == '1');
+    }
   } else if (strncmp(line, "ARYLIC:", 7) == 0) {
     arylicKnown = true;
     arylicOk = (strcmp(line + 7, "OK") == 0);

@@ -119,6 +119,8 @@ static void updateNowPlaying() {
   bool playingNow = esp32LinkIsPlaying();
 
   if (playingNow && !wasPlaying) {
+    Serial.print("[main] Streamer relay ON @");
+    Serial.println(millis());
     // Восходящий фронт: Arylic начал играть — включаем реле Streamer
     streamerRelayOn = true;
     applyStreamerRelay();
@@ -136,6 +138,8 @@ static void updateNowPlaying() {
     lastRenderedText[0] = '\0'; // форсируем перерисовку блоком ниже на этом же тике
     lastRenderedSource[0] = '\0';
   } else if (!playingNow && wasPlaying) {
+    Serial.print("[main] Streamer relay OFF @");
+    Serial.println(millis());
     // Нисходящий фронт: пауза/стоп — выключаем реле Streamer и уходим в обычную карусель,
     // независимо от того, был показан полноэкранный Now Playing или пользователь уже
     // "гостил" в меню (nowPlayingMenuVisitActive)

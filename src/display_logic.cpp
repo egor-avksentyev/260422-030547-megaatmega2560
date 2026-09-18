@@ -632,6 +632,22 @@ static void renderNowPlayingStatusText(int filledWidth) {
   u8g2.print(lenText);
 }
 
+// Bypass на экране Now Playing — не в обычном правом верхнем углу (там теперь бегущая строка
+// названия, см. NOW_PLAYING_TITLE_SCROLL_WIDTH в hardware_settings.h), а на одной строке со
+// счётчиком (NOW_PLAYING_STATUS_Y), прижато к правому краю той же строки прогресс-бара —
+// "напротив счётчика". Правый край считаем по реальной ширине текста (u8g2.getStrWidth()), а
+// не фиксированным X — короче/длиннее шрифт на будущее не важен. Используется вместо
+// drawStatusIndicators() ТОЛЬКО на этом экране; остальные экраны не затронуты
+static void renderNowPlayingBypassIndicator() {
+  if (settings[4] != 1) { // Bypass выключен — рисовать нечего
+    return;
+  }
+  u8g2.setFont(STATUS_INDICATOR_FONT);
+  int width = u8g2.getStrWidth("bypass");
+  u8g2.setCursor(NOW_PLAYING_PROGRESS_X + NOW_PLAYING_PROGRESS_WIDTH - width, NOW_PLAYING_STATUS_Y);
+  u8g2.print("bypass");
+}
+
 // Общая отрисовка названия трека с учётом прокрутки — используется и полной перерисовкой
 // (drawNowPlayingScreen(), scrollOffset=0 — там название только начинает отображаться), и
 // частичным тиканьем (updateNowPlayingTitleScroll()). Раньше drawNowPlayingScreen() печатала
@@ -708,7 +724,7 @@ void drawNowPlayingScreen() {
   u8g2.setCursor(NOW_PLAYING_TITLE_X, NOW_PLAYING_SOURCE_Y);
   u8g2.print("Source: Streamer");
 
-  drawStatusIndicators();
+  renderNowPlayingBypassIndicator();
 
   u8g2.sendBuffer();
 }
@@ -755,6 +771,10 @@ void updateNowPlayingProgress() {
   u8g2.setDrawColor(1);
   renderNowPlayingStatusText(filledWidth);
   renderNowPlayingProgressBar(filledWidth);
+  // Тот же регион (NOW_PLAYING_STATUS_CLEAR_Y/HEIGHT) только что стёрт и перерисован выше —
+  // bypass теперь живёт на этой же строке (см. renderNowPlayingBypassIndicator()), без этого
+  // вызова тик прогресс-бара стирал бы его и не возвращал обратно
+  renderNowPlayingBypassIndicator();
 
   uint8_t tx = NOW_PLAYING_PROGRESS_X / 8;
   uint8_t tw = (NOW_PLAYING_PROGRESS_X + NOW_PLAYING_PROGRESS_WIDTH - 1) / 8 - tx + 1;
@@ -816,10 +836,10 @@ void updateNowPlayingTitleScroll() {
   u8g2.drawBox(NOW_PLAYING_TITLE_X, clearTop, NOW_PLAYING_TITLE_SCROLL_WIDTH, clearHeight);
   u8g2.setDrawColor(1);
   renderNowPlayingTitleClipped(text, scrollOffset);
-  // Прокрутка теперь на всю ширину экрана — задевает BYPASS_INDICATOR_X/Y (80,10), а бегущий
-  // текст только что стёр и перерисовал этот регион. drawStatusIndicators() сама ничего не
-  // делает, если Bypass выключен — безопасно звать на каждый тик
-  drawStatusIndicators();
+  // Bypass на этом экране больше не в правом верхнем углу (см. renderNowPlayingBypassIndicator()),
+  // а на строке счётчика — область прокрутки заголовка (выше) с ней больше не пересекается,
+  // отдельная перерисовка bypass здесь больше не нужна (раньше была нужна именно из-за этого
+  // пересечения)
 
   uint8_t tx = NOW_PLAYING_TITLE_X / 8;
   uint8_t tw = (NOW_PLAYING_TITLE_X + NOW_PLAYING_TITLE_SCROLL_WIDTH - 1) / 8 - tx + 1;

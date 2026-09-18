@@ -391,10 +391,10 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 // Бегущая строка для названий, которые не помещаются целиком (см. updateNowPlayingTitleScroll()
 // в display_logic.cpp) — короткие названия просто рисуются статично, эта прокрутка включается
 // только когда реальная ширина текста (u8g2.getStrWidth()) больше NOW_PLAYING_TITLE_SCROLL_WIDTH.
-// На всю ширину экрана (как у прогресс-бара, NOW_PLAYING_PROGRESS_WIDTH) — заезжает за
-// BYPASS_INDICATOR_X (80, см. ниже), поэтому updateNowPlayingTitleScroll() сама перерисовывает
-// "bypass" поверх каждый тик (drawStatusIndicators() иначе вызывается только из полной
-// перерисовки экрана, а частичное обновление этой строки иначе стирало бы её)
+// На всю ширину экрана (как у прогресс-бара, NOW_PLAYING_PROGRESS_WIDTH) — раньше это заезжало
+// за BYPASS_INDICATOR_X (правый верхний угол), пока bypass не перенесли на строку статуса (см.
+// renderNowPlayingBypassIndicator() в display_logic.cpp — только на этом экране, у остальных
+// экранов bypass остаётся в углу через drawStatusIndicators()), теперь области не пересекаются
 #define NOW_PLAYING_TITLE_SCROLL_WIDTH 120
 #define NOW_PLAYING_TITLE_SCROLL_GAP_PX 16 // Пробел между концом текста и его повтором при зацикливании
 #define NOW_PLAYING_TITLE_SCROLL_STEP_MS 120 // мс на 1px сдвига — скорость прокрутки
