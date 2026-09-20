@@ -11,6 +11,7 @@
 #include "animations/mute_animation.h"
 #include "animations/unmute_animation.h"
 #include "rc5_icu.h"
+#include "esp32_link.h"
 
 void initRemoteControl() {
   rc5IcuInit(); // Input Capture Timer4 (пин 49) — см. rc5_icu.h. Заменил IRremote/IrReceiver
@@ -468,6 +469,9 @@ void handleRemoteInput() {
             // Volume специально НЕ гасим здесь — они должны оставаться последним, что ещё
             // светится, и погаснуть только в самом конце, через MENU_LED_SHUTDOWN_DELAY_MS
             // после того, как всё остальное уже потухло (см. powerOffDevices())
+            // Сразу, до многосекундной анимации POWER OFF ниже — иначе ESP32 (и веб-страница)
+            // узнают о выключении на несколько секунд позже реального нажатия (см. esp32_link.h)
+            esp32LinkSendPower(false);
             saveBypassStateOnShutdown(); // Восстанавливается при следующем включении, независимо от значения
             saveBassHighPositionOnShutdown(); // Пока моторы ещё не сдвинуты — иначе тут же перезапишет 0dB/0%
             saveSourceStateOnShutdown(); // Переживает настоящее отключение питания, не только Standby
