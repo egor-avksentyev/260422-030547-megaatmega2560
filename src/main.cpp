@@ -46,6 +46,24 @@ bool volumeOverlayActive = false;
 static int volumeOverlaySavedMenuItem = 0;
 static bool volumeOverlaySavedInSettingsMode = false;
 
+// Тот же приём и та же причина, что у throttledSliderRedraw() в remote_control.cpp — но для
+// вращения ЭНКОДЕРА (было пропущено, когда троттлинг добавляли только под пульт): раньше
+// каждый отдельный шаг энкодера немедленно вызывал drawArrowIndicator() без всякого троттлинга.
+// При быстром вращении соседние шаги легко идут чаще, чем DISPLAY_REDRAW_MIN_GAP_MS (50мс,
+// hardware_settings.h) — тогда waitForDisplayRedrawGap() внутри следующего вызова блокирующе
+// ждёт (delay()) недостающий остаток, и это же самое подвешивание loop() держит "дыхание" 6-го
+// светодиода Volume (см. lastBlinkRender ниже, 30мс тик) от обновления — выглядело как "неровное
+// дыхание" при вращении энкодера на громкости выше середины шкалы. Троттлинг только самой
+// перерисовки (не команды на мотор и не lastMotorInputTime — те обновляются всегда, без
+// троттлинга, см. тот же комментарий в remote_control.cpp) не теряет отзывчивости движения
+static void throttledEncoderSliderRedraw(bool showArrowRight, bool showArrowLeft) {
+  static unsigned long lastRedrawTime = 0;
+  if (millis() - lastRedrawTime >= 150) {
+    lastRedrawTime = millis();
+    drawArrowIndicator(0, showArrowRight, showArrowLeft);
+  }
+}
+
 // Полноэкранный показ положения ручки (drawArrowIndicator(), тот же экран, что и настоящий
 // вход в настройки), когда пользователь крутит Bass/High/Volume РУКОЙ, сидя на карусели
 // меню — см. блок обнаружения в loop(). currentMenuItem временно подставляется под нужный
@@ -555,19 +573,19 @@ void loop() {
           motorControl(direction * SLIDER_MOTOR_SPEED, MOTOR1_IN, MOTOR1_PWM);
           lastMotorInputTime = millis();
           encoderValue = 0;
-          drawArrowIndicator(0, showArrowRight, showArrowLeft);
+          throttledEncoderSliderRedraw(showArrowRight, showArrowLeft);
         } else if (menuItems[currentMenuItem] == "High") {
           cancelHighRecenter(); // Ручное управление энкодером отменяет автовозврат после Bypass
           motorControl(direction * SLIDER_MOTOR_SPEED, MOTOR2_IN, MOTOR2_PWM);
           lastMotorInputTime = millis();
           encoderValue = 0;
-          drawArrowIndicator(0, showArrowRight, showArrowLeft);
+          throttledEncoderSliderRedraw(showArrowRight, showArrowLeft);
         } else if (menuItems[currentMenuItem] == "Volume") {
           cancelVolumeSeek(); // Ручное управление энкодером отменяет автовозврат к целевой громкости после включения питания
           motorControl2(direction * SLIDER_MOTOR_SPEED, MOTOR3_IN1, MOTOR3_IN2, MOTOR3_PWM1, MOTOR3_PWM2);
           lastMotorInputTime = millis();
           encoderValue = 0;
-          drawArrowIndicator(0, showArrowRight, showArrowLeft);
+          throttledEncoderSliderRedraw(showArrowRight, showArrowLeft);
         } else if (menuItems[currentMenuItem] == "Dimmer") {
           if (!dimmerRowLocked) {
             // Строка ещё не подтверждена кликом энкодера (см. checkEncoderButton() в
