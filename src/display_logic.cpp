@@ -119,8 +119,6 @@ void drawMenu() {
   }
 
   drawStatusIndicators();
-  // Мини-экран на веб-странице ESP32 — карусель, ничего не редактируется (inSettings=false)
-  esp32LinkSendScreen(menuItems[currentMenuItem].c_str(), false, "", "", 0);
 
   u8g2.sendBuffer();
 }
@@ -174,7 +172,6 @@ void drawToggleSwitch(bool state) {
   u8g2.print(state ? "On" : "Off");
 
   drawStatusIndicators();
-  esp32LinkSendScreen(menuItems[currentMenuItem].c_str(), true, state ? "On" : "Off", "", 0);
 
   u8g2.sendBuffer();
 }
@@ -277,9 +274,6 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
   u8g2.print(unit);
 
   drawStatusIndicators();
-  char screenValBuf[12];
-  snprintf(screenValBuf, sizeof(screenValBuf), "%d%s", potValue, unit);
-  esp32LinkSendScreen(menuItems[currentMenuItem].c_str(), true, screenValBuf, "", 0);
 
   u8g2.sendBuffer();
 }
@@ -337,7 +331,6 @@ void drawDimmerScreen() {
     DIMMER_ROW_DOT_RADIUS, DIMMER_ROW_DOT_X_OFFSET);
 
   drawStatusIndicators();
-  esp32LinkSendScreen("Dimmer", true, ledRow, displayRow, dimmerEditingDisplay ? 2 : 1);
 
   u8g2.sendBuffer();
 }
@@ -389,10 +382,6 @@ void drawColorScreen(int colorIndex) {
     ringColorPalette[colorIndex].r, ringColorPalette[colorIndex].g, ringColorPalette[colorIndex].b);
 
   drawStatusIndicators();
-  // Отдельное сообщение (не SCR:) — нужен цвет r/g/b, монохромный дизеринг веб-странице не
-  // повторить (да и незачем — там настоящий цвет можно показать напрямую)
-  esp32LinkSendColor(ringColorPalette[colorIndex].name,
-    ringColorPalette[colorIndex].r, ringColorPalette[colorIndex].g, ringColorPalette[colorIndex].b);
 
   u8g2.sendBuffer();
 }
@@ -420,7 +409,6 @@ void drawSourceScreen(int sourceIndex) {
   }
 
   drawStatusIndicators();
-  esp32LinkSendScreen("Source", true, sourceNames[sourceIndex], "", 0);
 
   u8g2.sendBuffer();
 }
@@ -458,7 +446,6 @@ void drawEqScreen(int eqIndex) {
   }
 
   drawStatusIndicators();
-  esp32LinkSendScreen("EQ", true, eqPresets[eqIndex].name, "", 0);
 
   u8g2.sendBuffer();
 }
@@ -568,11 +555,6 @@ void drawInfoScreen() {
   u8g2.print("V");
 
   drawStatusIndicators();
-  // Только заголовок — сами данные (температуры/напряжение/статус Arylic/IP) ESP32 либо уже
-  // знает сам (Arylic/Setup IP/Control IP — он их источник), либо получает отдельно TEMP:/
-  // VOLT: (esp32LinkSendSensors(), main.cpp/loop()); Streamer — единственное, чего ESP32
-  // иначе не узнал бы, шлётся отдельно из applyStreamerRelay() (STREAMER:), не отсюда
-  esp32LinkSendScreen("Info", true, "", "", 0);
 
   u8g2.sendBuffer();
 }

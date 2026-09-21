@@ -280,7 +280,6 @@ void handleRemoteInput() {
           Serial.println("Mute button pressed"); // Отладочный вывод
           isMuted = !isMuted; // Переключаем состояние Mute
           digitalWrite(RELAY_PIN_MUTE, isMuted ? HIGH : LOW); // Управляем реле Mute
-          esp32LinkSendMute(isMuted);
           if (isMuted) {
             // Экран сразу займёт непрерывная анимация — см. animateMuteFrame() в main.cpp
             // (крутится, пока Mute включён), перерисовывать текущий экран смысла нет —

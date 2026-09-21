@@ -3,7 +3,6 @@
 #include "main.h"
 #include "animation_logic.h"
 #include "display_logic.h"
-#include "esp32_link.h"
 
 // Применяет settings[] для пункта "Source" (0-2): включает ровно одно из трёх реле,
 // остальные два принудительно гасит — переключение источников взаимоисключающее.
@@ -22,7 +21,6 @@ void applySourceSelection() {
 // settings[4] — не принимает параметр
 void applyStreamerRelay() {
   digitalWrite(STREAMER_RELAY_PIN, streamerRelayOn ? HIGH : LOW);
-  esp32LinkSendStreamerTag(streamerRelayOn);
 }
 
 // Применяет текущее settings[4] (Bypass) и на реле, и на отдельный индикаторный
@@ -30,7 +28,6 @@ void applyStreamerRelay() {
 void applyBypassState() {
   digitalWrite(RELAY_PIN_LED, settings[4] == 1 ? HIGH : LOW);
   digitalWrite(BYPASS_LED_PIN, settings[4] == 0 ? HIGH : LOW);
-  esp32LinkSendBypassTag(settings[4] == 1);
 }
 
 // Опрашивает физическую кнопку Bypass. Каждое нажатие (переход в LOW) переключает
