@@ -290,9 +290,6 @@ static void executeWebCommand(char letter) {
         powerOnDevices();
         powerOff = false;
       } else {
-        // Сразу, до многосекундной анимации POWER OFF ниже — иначе ESP32 (и веб-страница)
-        // узнают о выключении на несколько секунд позже реального нажатия (см. esp32_link.h)
-        esp32LinkSendPower(false);
         digitalWrite(LED_BASS_PIN, LOW);
         digitalWrite(LED_HIGH_PIN, LOW);
         digitalWrite(LED_VOLUME_PIN, LOW);
@@ -301,7 +298,6 @@ static void executeWebCommand(char letter) {
         saveSourceStateOnShutdown();
         saveVuMeterStateOnShutdown();
         saveEqStateOnShutdown();
-        saveStreamerStateOnShutdown(); // Была пропущена в этой копии — есть в remote_control.cpp/IR_POWER, здесь нет; добавлено заодно
         saveDimmerColorSettings();
         seekBassHighVolumeToZeroBlocking();
         delay(100);
@@ -417,26 +413,4 @@ bool esp32LinkArylicKnown() {
 
 bool esp32LinkArylicOk() {
   return arylicOk;
-}
-
-void esp32LinkSendPower(bool poweredOn) {
-  Serial2.print("POWER:");
-  Serial2.println(poweredOn ? '1' : '0');
-}
-
-void esp32LinkSendSensors(const float temps[3], int voltage) {
-  // dtostrf(), не snprintf("%f"...) — тот же приём, что в display_logic.cpp: avr-libc по
-  // умолчанию собран без поддержки float в *printf
-  char t1[8], t2[8], t3[8];
-  dtostrf(temps[0], 1, 1, t1);
-  dtostrf(temps[1], 1, 1, t2);
-  dtostrf(temps[2], 1, 1, t3);
-  Serial2.print("TEMP:");
-  Serial2.print(t1);
-  Serial2.print(':');
-  Serial2.print(t2);
-  Serial2.print(':');
-  Serial2.println(t3);
-  Serial2.print("VOLT:");
-  Serial2.println(voltage);
 }

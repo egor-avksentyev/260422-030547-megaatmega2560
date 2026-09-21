@@ -11,7 +11,6 @@
 #include "animations/mute_animation.h"
 #include "animations/unmute_animation.h"
 #include "rc5_icu.h"
-#include "esp32_link.h"
 
 void initRemoteControl() {
   rc5IcuInit(); // Input Capture Timer4 (пин 49) — см. rc5_icu.h. Заменил IRremote/IrReceiver
@@ -48,12 +47,6 @@ static void throttledSliderRedraw(bool showArrowRight, bool showArrowLeft) {
   }
 }
 
-static unsigned long lastValidIrFrameTime = 0;
-
-unsigned long lastIrFrameTime() {
-  return lastValidIrFrameTime;
-}
-
 void handleRemoteInput() {
   {
     uint8_t icuAddress, icuCommand;
@@ -69,8 +62,6 @@ void handleRemoteInput() {
       // все 14 валидных бит, отбрасывать отдельно нечего
       return;
     }
-
-    lastValidIrFrameTime = millis(); // см. lastIrFrameTime() — признак "пульт активно используется"
 
     // Раньше здесь стоял флаг IRDATA_FLAGS_IS_REPEAT от IRremote — RC5-декодер на ICU
     // такого флага не даёт (протокол сам предоставляет только toggle-бит, а этот
@@ -477,9 +468,6 @@ void handleRemoteInput() {
             // Volume специально НЕ гасим здесь — они должны оставаться последним, что ещё
             // светится, и погаснуть только в самом конце, через MENU_LED_SHUTDOWN_DELAY_MS
             // после того, как всё остальное уже потухло (см. powerOffDevices())
-            // Сразу, до многосекундной анимации POWER OFF ниже — иначе ESP32 (и веб-страница)
-            // узнают о выключении на несколько секунд позже реального нажатия (см. esp32_link.h)
-            esp32LinkSendPower(false);
             saveBypassStateOnShutdown(); // Восстанавливается при следующем включении, независимо от значения
             saveBassHighPositionOnShutdown(); // Пока моторы ещё не сдвинуты — иначе тут же перезапишет 0dB/0%
             saveSourceStateOnShutdown(); // Переживает настоящее отключение питания, не только Standby

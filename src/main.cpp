@@ -27,7 +27,6 @@
 #include "animations/eq_animation.h"
 #include "animations/info_animation.h"
 #include "temperature_sensor.h"
-#include "voltage_sensor.h"
 #include "esp32_link.h"
 
 String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source", "EQ", "Info"};
@@ -912,30 +911,5 @@ void loop() {
       millis() - lastInfoUpdate >= INFO_UPDATE_INTERVAL_MS) {
     lastInfoUpdate = millis();
     drawInfoScreen();
-  }
-
-  // Температуры/напряжение на ESP32 (веб-страница) — независимо от того, открыт ли Info
-  // на самой Mega, и независимо от powerOff (см. esp32LinkSendSensors() за подробностями).
-  // POWER: тут же, а не только в момент переключения (esp32LinkSendPower() в
-  // remote_control.cpp/esp32_link.cpp/on_off_logic.cpp) — тем же принципом, что уже
-  // используется для PLAY: на стороне ESP32 ("отправляется на каждом опросе, чтобы Mega не
-  // застряла в устаревшем состоянии, если пропустила один кадр", см. esp32_link.h): если
-  // ESP32 перезагрузится/переподключится, пока Mega уже выключена, она узнает реальное
-  // состояние в течение ESP32_LINK_SENSOR_SEND_INTERVAL_MS, не дожидаясь следующего нажатия
-  static unsigned long lastSensorSend = 0;
-  if (millis() - lastSensorSend >= ESP32_LINK_SENSOR_SEND_INTERVAL_MS) {
-    // readMainsVoltage() блокирует ~40мс (400 analogRead(), см. voltage_sensor.cpp) — если
-    // ручку крутят или держат кнопку пульта прямо сейчас, откладываем этот тик целиком (не
-    // трогаем lastSensorSend, попробуем на следующей итерации loop()), чтобы не подвесить
-    // мотор/энкодер/ИК ровно во время активного использования (см. SENSOR_READ_QUIET_GAP_MS)
-    if (millis() - lastMotorInputTime >= SENSOR_READ_QUIET_GAP_MS &&
-        millis() - lastIrFrameTime() >= SENSOR_READ_QUIET_GAP_MS) {
-      lastSensorSend = millis();
-      float temps[3];
-      readAllTemperatures(temps);
-      int voltage = readMainsVoltage();
-      esp32LinkSendSensors(temps, voltage);
-      esp32LinkSendPower(!powerOff);
-    }
   }
 }

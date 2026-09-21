@@ -365,25 +365,14 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 #define INFO_TOGGLE_WIDTH 20
 #define INFO_TOGGLE_HEIGHT 9
 
-// --- Связь с ESP32-компаньоном (esp32_link.h/.cpp) — двусторонняя по UART, см. esp32_link.h
-// за полным протоколом и историей ("Mega только слушает" больше не актуально с 2026-09-21).
-// Serial2 — аппаратный UART Mega, RX2/TX2 фиксированы на пинах 17/16, библиотека Mega (в
-// отличие от ESP32) не позволяет и не требует указывать пины у HardwareSerial — они
-// фиксированы аппаратно ---
+// --- Связь с ESP32-компаньоном (esp32_link.h/.cpp) — приём по UART, Mega только слушает,
+// см. README.md ("Mega только слушает") и репозиторий esp32-audio-web-control. Serial2 —
+// аппаратный UART Mega, RX2 фиксирован на пине 17 (TX2=16 не используется — см. там же,
+// почему line shifter не нужен), библиотека Mega (в отличие от ESP32) не позволяет и не
+// требует указывать пины у HardwareSerial — они фиксированы аппаратно ---
 #define ESP32_LINK_BAUD 115200
 #define ESP32_LINK_META_MAX_LEN 40 // Должно совпадать с MEGA_LINK_META_MAX_LEN в config.h ESP32-проекта
 #define ESP32_LINK_SOURCE_MAX_LEN 20 // Источник воспроизведения ("Spotify"/"AirPlay"/...) — короче META, однострочная подпись
-// Как часто Mega сама, независимо от экрана Info, шлёт TEMP:/VOLT: на ESP32 (см.
-// esp32LinkSendSensors() в main.cpp/loop()) — реже, чем INFO_UPDATE_INTERVAL_MS (веб-странице
-// не нужна такая же частота, как живому обновлению на самом OLED)
-#define ESP32_LINK_SENSOR_SEND_INTERVAL_MS 2000
-// readMainsVoltage() (voltage_sensor.cpp) — 400 подряд analogRead(), ~40мс блокировки loop().
-// Раньше это читалось только пока на самой Mega открыт экран Info; теперь (см. esp32LinkSendSensors()
-// в main.cpp/loop()) читается в фоне всегда, и этот блокирующий кусок может случайно попасть
-// прямо во время вращения ручки/удержания пульта — ощущалось как "подтормаживание". Поэтому
-// сам замер (не отправка POWER:) откладывается на следующий тик, если с последней команды
-// мотору или последнего валидного ИК-кадра прошло меньше этого времени — см. main.cpp
-#define SENSOR_READ_QUIET_GAP_MS 400
 // IP, который ESP32 показывает САМ СЕБЕ на время настройки Wi-Fi (своя точка доступа
 // AudioCtrl-Setup) — фиксированное значение по умолчанию у SoftAP на ESP32, никогда не
 // приходит по UART (ESP32 шлёт IP: только когда подключена к настоящей сети, см.
