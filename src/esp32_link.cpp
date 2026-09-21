@@ -277,6 +277,7 @@ static void executeWebCommand(char letter) {
     case 'M':
       isMuted = !isMuted;
       digitalWrite(RELAY_PIN_MUTE, isMuted ? HIGH : LOW);
+      esp32LinkSendMute(isMuted);
       if (isMuted) {
         resetMuteAnimation();
       } else {
@@ -439,4 +440,43 @@ void esp32LinkSendSensors(const float temps[3], int voltage) {
   Serial2.println(t3);
   Serial2.print("VOLT:");
   Serial2.println(voltage);
+}
+
+void esp32LinkSendScreen(const char* name, bool inSettings, const char* line1, const char* line2, uint8_t highlight) {
+  Serial2.print("SCR:");
+  Serial2.print(name);
+  Serial2.print(':');
+  Serial2.print(inSettings ? '1' : '0');
+  Serial2.print(':');
+  Serial2.print(line1);
+  Serial2.print(':');
+  Serial2.print(line2);
+  Serial2.print(':');
+  Serial2.println(highlight);
+}
+
+void esp32LinkSendColor(const char* name, uint8_t r, uint8_t g, uint8_t b) {
+  Serial2.print("COLOR:");
+  Serial2.print(name);
+  Serial2.print(':');
+  Serial2.print(r);
+  Serial2.print(':');
+  Serial2.print(g);
+  Serial2.print(':');
+  Serial2.println(b);
+}
+
+void esp32LinkSendMute(bool muted) {
+  Serial2.print("MUTE:");
+  Serial2.println(muted ? '1' : '0');
+}
+
+void esp32LinkSendBypassTag(bool on) {
+  Serial2.print("BYP:");
+  Serial2.println(on ? '1' : '0');
+}
+
+void esp32LinkSendStreamerTag(bool on) {
+  Serial2.print("STREAMER:");
+  Serial2.println(on ? '1' : '0');
 }

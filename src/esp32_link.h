@@ -45,6 +45,24 @@
 //                    hardware_settings.h) независимо от того, открыт ли на самой Mega экран
 //                    Info — веб-странице эти значения нужны всегда
 //   VOLT:<value>   — напряжение сети (целое число вольт), тем же таймером, что и TEMP:
+//   SCR:<name>:<inSettings 0/1>:<line1>:<line2>:<highlight 0/1/2> — зеркало текущего экрана
+//                    OLED для мини-экрана на веб-странице (см. esp32LinkSendScreen() ниже) —
+//                    line1/line2 уже готовый, отформатированный текст (то же самое, что Mega
+//                    печатает на своём дисплее), не индекс/сырое значение — веб-странице не
+//                    нужно ничего пересчитывать или хранить свои копии таблиц (sourceNames[]
+//                    и т.п.), только показать строку как есть. line2/highlight используются
+//                    только экраном Dimmer (два ряда, highlight — какой из них активен),
+//                    у остальных экранов line2 пустой, highlight 0
+//   COLOR:<name>:<r>:<g>:<b> — экран "Color" отдельным сообщением, не через SCR: — нужен цвет
+//                    (r/g/b), которого нет у остальных экранов; подразумевает menu=Color,
+//                    inSettings=1 сам по себе, отдельный SCR: для него не шлётся
+//   MUTE:0/1       — включён ли Mute (полноэкранная анимация на самой Mega, см.
+//                    mute_animation.h) — шлётся один раз при переключении, не каждый кадр
+//   BYP:0/1        — состояние Bypass (settings[4]) — та же надпись "bypass", что в углу
+//                    любого экрана OLED, актуальна независимо от того, какой пункт меню
+//                    сейчас открыт
+//   STREAMER:0/1   — состояние независимого реле Streamer (streamerRelayOn) — строка в Info,
+//                    но меняется и автоматически при старте/остановке воспроизведения
 // ============================================================================
 
 #include <Arduino.h>
@@ -100,3 +118,18 @@ void esp32LinkSendPower(bool poweredOn);
 // на самой Mega. temps[i] — как из readAllTemperatures() (TEMP_SENSOR_INVALID, если датчик
 // не отвечает), voltage — как из readMainsVoltage()
 void esp32LinkSendSensors(const float temps[3], int voltage);
+
+// Мини-экран на веб-странице — см. протокол выше. Вызывать из display_logic.cpp, из тех же
+// draw*() функций, что уже рисуют экран на самой Mega (единая точка для всех 3 источников
+// ввода — они и так все сходятся к одним и тем же draw*(), см. CLAUDE.md), а не дублировать
+// вызов в remote_control.cpp/encoder.cpp/esp32_link.cpp отдельно
+void esp32LinkSendScreen(const char* name, bool inSettings, const char* line1, const char* line2, uint8_t highlight);
+void esp32LinkSendColor(const char* name, uint8_t r, uint8_t g, uint8_t b);
+
+// Эти три — по своим единым точкам применения (applyBypassState()/applyStreamerRelay() в
+// relay.cpp, resetMuteAnimation()/playUnmuteAnimation() в animations/*_animation.cpp) —
+// кроме Mute: тот, в отличие от Bypass/Streamer, всё же вызывается из двух мест
+// (remote_control.cpp/esp32_link.cpp), как и сам переключатель isMuted
+void esp32LinkSendMute(bool muted);
+void esp32LinkSendBypassTag(bool on);
+void esp32LinkSendStreamerTag(bool on);
