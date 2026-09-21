@@ -924,11 +924,18 @@ void loop() {
   // состояние в течение ESP32_LINK_SENSOR_SEND_INTERVAL_MS, не дожидаясь следующего нажатия
   static unsigned long lastSensorSend = 0;
   if (millis() - lastSensorSend >= ESP32_LINK_SENSOR_SEND_INTERVAL_MS) {
-    lastSensorSend = millis();
-    float temps[3];
-    readAllTemperatures(temps);
-    int voltage = readMainsVoltage();
-    esp32LinkSendSensors(temps, voltage);
-    esp32LinkSendPower(!powerOff);
+    // readMainsVoltage() блокирует ~40мс (400 analogRead(), см. voltage_sensor.cpp) — если
+    // ручку крутят или держат кнопку пульта прямо сейчас, откладываем этот тик целиком (не
+    // трогаем lastSensorSend, попробуем на следующей итерации loop()), чтобы не подвесить
+    // мотор/энкодер/ИК ровно во время активного использования (см. SENSOR_READ_QUIET_GAP_MS)
+    if (millis() - lastMotorInputTime >= SENSOR_READ_QUIET_GAP_MS &&
+        millis() - lastIrFrameTime() >= SENSOR_READ_QUIET_GAP_MS) {
+      lastSensorSend = millis();
+      float temps[3];
+      readAllTemperatures(temps);
+      int voltage = readMainsVoltage();
+      esp32LinkSendSensors(temps, voltage);
+      esp32LinkSendPower(!powerOff);
+    }
   }
 }
