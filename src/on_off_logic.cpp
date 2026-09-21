@@ -8,6 +8,7 @@
 #include "motor_position.h"
 #include "animation_logic.h"
 #include "animations/boot_animation.h"
+#include "esp32_link.h"
 #include <EEPROM.h>
 
 bool powerOff = false; // Флаг для состояния питания
@@ -275,6 +276,11 @@ void powerOffDevices() {
 }
 
 void powerOnDevices() {
+  // Единая точка для обеих копий (IR_POWER в remote_control.cpp и case 'P' в esp32_link.cpp
+  // зовут именно эту функцию) — не нужно дублировать отправку, в отличие от esp32LinkSendPower(false)
+  // в самих copies выключения (см. esp32_link.h за объяснением, почему тот шлётся раньше)
+  esp32LinkSendPower(true);
+
   // Сброс фронт-детектора Now Playing (main.cpp) — ДО всего остального, чтобы уже на первой
   // же итерации updateNowPlaying() после включения честно увидеть восходящий фронт "не играло ->
   // играет", даже если PLAY:1 от ESP32 придёт очень быстро (см. resetNowPlayingEdgeState())
