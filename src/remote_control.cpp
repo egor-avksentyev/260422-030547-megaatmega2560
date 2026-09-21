@@ -48,6 +48,12 @@ static void throttledSliderRedraw(bool showArrowRight, bool showArrowLeft) {
   }
 }
 
+static unsigned long lastValidIrFrameTime = 0;
+
+unsigned long lastIrFrameTime() {
+  return lastValidIrFrameTime;
+}
+
 void handleRemoteInput() {
   {
     uint8_t icuAddress, icuCommand;
@@ -63,6 +69,8 @@ void handleRemoteInput() {
       // все 14 валидных бит, отбрасывать отдельно нечего
       return;
     }
+
+    lastValidIrFrameTime = millis(); // см. lastIrFrameTime() — признак "пульт активно используется"
 
     // Раньше здесь стоял флаг IRDATA_FLAGS_IS_REPEAT от IRremote — RC5-декодер на ICU
     // такого флага не даёт (протокол сам предоставляет только toggle-бит, а этот

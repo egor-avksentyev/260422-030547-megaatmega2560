@@ -377,6 +377,13 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 // esp32LinkSendSensors() в main.cpp/loop()) — реже, чем INFO_UPDATE_INTERVAL_MS (веб-странице
 // не нужна такая же частота, как живому обновлению на самом OLED)
 #define ESP32_LINK_SENSOR_SEND_INTERVAL_MS 2000
+// readMainsVoltage() (voltage_sensor.cpp) — 400 подряд analogRead(), ~40мс блокировки loop().
+// Раньше это читалось только пока на самой Mega открыт экран Info; теперь (см. esp32LinkSendSensors()
+// в main.cpp/loop()) читается в фоне всегда, и этот блокирующий кусок может случайно попасть
+// прямо во время вращения ручки/удержания пульта — ощущалось как "подтормаживание". Поэтому
+// сам замер (не отправка POWER:) откладывается на следующий тик, если с последней команды
+// мотору или последнего валидного ИК-кадра прошло меньше этого времени — см. main.cpp
+#define SENSOR_READ_QUIET_GAP_MS 400
 // IP, который ESP32 показывает САМ СЕБЕ на время настройки Wi-Fi (своя точка доступа
 // AudioCtrl-Setup) — фиксированное значение по умолчанию у SoftAP на ESP32, никогда не
 // приходит по UART (ESP32 шлёт IP: только когда подключена к настоящей сети, см.
