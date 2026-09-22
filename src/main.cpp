@@ -29,6 +29,7 @@
 #include "temperature_sensor.h"
 #include "voltage_sensor.h"
 #include "esp32_link.h"
+#include "frame_mirror.h"
 
 String menuItems[] = {"Bass", "High", "Volume", "VU Meter", "Bypass", "Dimmer", "Color", "Source", "EQ", "Info"};
 int currentMenuItem = 0;
@@ -429,6 +430,7 @@ void setup() {
   initRemoteControl(); // Теперь на Input Capture Timer4 (пин 49) — см. rc5_icu.h/remote_control.cpp
   initTemperatureSensors(); // Датчики DS18B20, пункт меню "Info"
   esp32LinkInit(); // Serial2 (RX2, пин 17, фиксированный) — приём от ESP32-компаньона, см. esp32_link.h
+  frameMirrorInit(); // Serial3 (TX3, пин 14) — эксперимент, см. frame_mirror.h
   attachInterrupt(digitalPinToInterrupt(ENCODER_A_PIN), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCODER_B_PIN), encoderISR, CHANGE);
 
@@ -451,6 +453,10 @@ void loop() {
   // (см. ниже). Сам updateNowPlaying() (переключение Source/показ Now Playing) по-прежнему
   // имеет смысл только пока система включена — реле/дисплей обесточены в Standby
   esp32LinkPoll();
+
+  // Эксперимент (ветка experiment/frame-mirror-serial3, не main, см. frame_mirror.h) — не
+  // блокирует сама по себе, только реально отправляемый ею кадр (throttled)
+  frameMirrorPoll();
 
   // Автовключение из Standby — ТОЛЬКО на фронт "не играло -> играет", а не на сам факт "сейчас
   // играет" (раньше был чистый level-check — если выключить питание пультом ПОКА стрим уже

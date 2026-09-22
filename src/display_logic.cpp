@@ -15,6 +15,7 @@
 #include "temperature_sensor.h"
 #include "voltage_sensor.h"
 #include "esp32_link.h"
+#include "frame_mirror.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -120,6 +121,7 @@ void drawMenu() {
 
   drawStatusIndicators();
 
+  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -173,6 +175,7 @@ void drawToggleSwitch(bool state) {
 
   drawStatusIndicators();
 
+  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -275,6 +278,7 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
 
   drawStatusIndicators();
 
+  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -332,6 +336,7 @@ void drawDimmerScreen() {
 
   drawStatusIndicators();
 
+  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -383,6 +388,7 @@ void drawColorScreen(int colorIndex) {
 
   drawStatusIndicators();
 
+  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -410,6 +416,7 @@ void drawSourceScreen(int sourceIndex) {
 
   drawStatusIndicators();
 
+  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -447,6 +454,7 @@ void drawEqScreen(int eqIndex) {
 
   drawStatusIndicators();
 
+  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -556,6 +564,7 @@ void drawInfoScreen() {
 
   drawStatusIndicators();
 
+  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -726,6 +735,7 @@ void drawNowPlayingScreen() {
 
   renderNowPlayingBypassIndicator();
 
+  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -855,6 +865,7 @@ void displayMessage(const char* message) {
   int strWidth = u8g2.getStrWidth(message);
   u8g2.setCursor((128 - strWidth) / 2, 32); // Центрирование сообщения
   u8g2.print(message);
+  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
   delay(3000); // Задержка 3 секунды
 }
