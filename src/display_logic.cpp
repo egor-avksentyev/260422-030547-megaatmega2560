@@ -130,7 +130,7 @@ void drawMenu() {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(frameMirrorIconId); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(frameMirrorIconId, FRAME_MIRROR_SCREEN_OTHER); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -184,7 +184,7 @@ void drawToggleSwitch(bool state) {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_OTHER); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -287,7 +287,7 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_OTHER); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -345,7 +345,7 @@ void drawDimmerScreen() {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_OTHER); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -397,7 +397,7 @@ void drawColorScreen(int colorIndex) {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_OTHER); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -425,7 +425,7 @@ void drawSourceScreen(int sourceIndex) {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_OTHER); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -463,7 +463,7 @@ void drawEqScreen(int eqIndex) {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_OTHER); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -573,7 +573,7 @@ void drawInfoScreen() {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_OTHER); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -744,7 +744,11 @@ void drawNowPlayingScreen() {
 
   renderNowPlayingBypassIndicator();
 
-  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  // FRAME_MIRROR_SCREEN_NOW_PLAYING — веб-страница локально симулирует прогресс-бар поверх
+  // зеркала (см. web_control.cpp ESP32-репозитория), используя уже известные ей trackPos/
+  // trackLen — не гоняем кадр на каждый тик updateNowPlayingProgress() (частичный
+  // updateDisplayArea(), не подключён к зеркалу по той же причине, что и анимация иконок)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_NOW_PLAYING); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -874,7 +878,7 @@ void displayMessage(const char* message) {
   int strWidth = u8g2.getStrWidth(message);
   u8g2.setCursor((128 - strWidth) / 2, 32); // Центрирование сообщения
   u8g2.print(message);
-  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_OTHER); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
   delay(3000); // Задержка 3 секунды
 }

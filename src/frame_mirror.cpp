@@ -4,15 +4,17 @@
 
 static bool pending = false;
 static uint8_t pendingIconId = FRAME_MIRROR_ICON_NONE;
+static uint8_t pendingScreenId = FRAME_MIRROR_SCREEN_OTHER;
 static unsigned long lastSendTime = 0;
 
 void frameMirrorInit() {
   Serial3.begin(FRAME_MIRROR_BAUD);
 }
 
-void frameMirrorRequestSend(uint8_t iconId) {
+void frameMirrorRequestSend(uint8_t iconId, uint8_t screenId) {
   pending = true;
   pendingIconId = iconId;
+  pendingScreenId = screenId;
 }
 
 void frameMirrorPoll() {
@@ -36,10 +38,12 @@ void frameMirrorPoll() {
     checksum ^= buf[i];
   }
   checksum ^= pendingIconId;
+  checksum ^= pendingScreenId;
 
   Serial3.write((uint8_t)0xAA);
   Serial3.write((uint8_t)0x55);
   Serial3.write(buf, totalBytes);
   Serial3.write(pendingIconId);
+  Serial3.write(pendingScreenId);
   Serial3.write(checksum);
 }
