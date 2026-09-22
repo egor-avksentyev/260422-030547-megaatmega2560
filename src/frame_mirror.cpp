@@ -3,14 +3,16 @@
 #include "display_logic.h"
 
 static bool pending = false;
+static uint8_t pendingIconId = FRAME_MIRROR_ICON_NONE;
 static unsigned long lastSendTime = 0;
 
 void frameMirrorInit() {
   Serial3.begin(FRAME_MIRROR_BAUD);
 }
 
-void frameMirrorRequestSend() {
+void frameMirrorRequestSend(uint8_t iconId) {
   pending = true;
+  pendingIconId = iconId;
 }
 
 void frameMirrorPoll() {
@@ -33,9 +35,11 @@ void frameMirrorPoll() {
   for (uint16_t i = 0; i < totalBytes; i++) {
     checksum ^= buf[i];
   }
+  checksum ^= pendingIconId;
 
   Serial3.write((uint8_t)0xAA);
   Serial3.write((uint8_t)0x55);
   Serial3.write(buf, totalBytes);
+  Serial3.write(pendingIconId);
   Serial3.write(checksum);
 }

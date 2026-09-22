@@ -101,27 +101,36 @@ void drawMenu() {
 
   // Крутящаяся иконка пункта меню — своя для каждого пункта (или общая для Bass/High/Volume),
   // см. подробности в hardware_settings.h у MENU_ICON_*
+  uint8_t frameMirrorIconId = FRAME_MIRROR_ICON_NONE;
   if (menuItems[currentMenuItem] == "Bass" || menuItems[currentMenuItem] == "High" || menuItems[currentMenuItem] == "Volume") {
     drawBassVolumeHighAnim(MENU_ICON_X, MENU_ICON_Y);
+    frameMirrorIconId = FRAME_MIRROR_ICON_BASS_HIGH_VOLUME;
   } else if (menuItems[currentMenuItem] == "VU Meter") {
     drawVuMeterAnim(MENU_ICON_X, MENU_ICON_Y);
+    frameMirrorIconId = FRAME_MIRROR_ICON_VU_METER;
   } else if (menuItems[currentMenuItem] == "Bypass") {
     drawBypassAnim(MENU_ICON_X, MENU_ICON_Y);
+    frameMirrorIconId = FRAME_MIRROR_ICON_BYPASS;
   } else if (menuItems[currentMenuItem] == "Dimmer") {
     drawDimmerAnim(MENU_ICON_X, MENU_ICON_Y);
+    frameMirrorIconId = FRAME_MIRROR_ICON_DIMMER;
   } else if (menuItems[currentMenuItem] == "Color") {
     drawColorAnim(MENU_ICON_X, MENU_ICON_Y);
+    frameMirrorIconId = FRAME_MIRROR_ICON_COLOR;
   } else if (menuItems[currentMenuItem] == "Source") {
     drawSourceAnim(MENU_ICON_X, MENU_ICON_Y);
+    frameMirrorIconId = FRAME_MIRROR_ICON_SOURCE;
   } else if (menuItems[currentMenuItem] == "EQ") {
     drawEqAnim(EQ_ICON_X, EQ_ICON_Y);
+    frameMirrorIconId = FRAME_MIRROR_ICON_EQ;
   } else if (menuItems[currentMenuItem] == "Info") {
     drawInfoAnim(MENU_ICON_X, MENU_ICON_Y);
+    frameMirrorIconId = FRAME_MIRROR_ICON_INFO;
   }
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(frameMirrorIconId); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -175,7 +184,7 @@ void drawToggleSwitch(bool state) {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -278,7 +287,7 @@ void drawArrowIndicator(int settingValue, bool showArrowRight, bool showArrowLef
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -336,7 +345,7 @@ void drawDimmerScreen() {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -388,7 +397,7 @@ void drawColorScreen(int colorIndex) {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -416,7 +425,7 @@ void drawSourceScreen(int sourceIndex) {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -454,7 +463,7 @@ void drawEqScreen(int eqIndex) {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -564,7 +573,7 @@ void drawInfoScreen() {
 
   drawStatusIndicators();
 
-  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -735,7 +744,7 @@ void drawNowPlayingScreen() {
 
   renderNowPlayingBypassIndicator();
 
-  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
 }
 
@@ -865,7 +874,7 @@ void displayMessage(const char* message) {
   int strWidth = u8g2.getStrWidth(message);
   u8g2.setCursor((128 - strWidth) / 2, 32); // Центрирование сообщения
   u8g2.print(message);
-  frameMirrorRequestSend(); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
+  frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE); // эксперимент (ветка experiment/frame-mirror-serial3, не main)
   u8g2.sendBuffer();
   delay(3000); // Задержка 3 секунды
 }
