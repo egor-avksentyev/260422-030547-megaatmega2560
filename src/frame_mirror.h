@@ -47,6 +47,12 @@
 // отдельного индикатора) — не хватало только "сейчас показан именно экран Now Playing"
 #define FRAME_MIRROR_SCREEN_OTHER 0
 #define FRAME_MIRROR_SCREEN_NOW_PLAYING 1
+// Та же идея — Mute тоже прекращает слать полные кадры после первого (см. mute_animation.cpp,
+// needsFullClear) и дальше крутит анимацию частичными updateDisplayArea(), в зеркало не
+// попадающими. Веб-страница по этому ID сама крутит те же 18 кадров 48x48 локально (MUTE_B64,
+// web_control.cpp ESP32-репозитория), поверх (изначально верно нарисованного один раз) чёрного
+// фона — синхронности с реальным кадром на Mega, как и у иконок, не требуется
+#define FRAME_MIRROR_SCREEN_MUTE 2
 //
 // Почему это может быть безопаснее прежней попытки (см. память проекта,
 // project_frame_mirror_experiment_rejected — та же идея на общем Serial2, в hex, 115200 бод,

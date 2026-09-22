@@ -80,7 +80,7 @@ void animateMuteFrame() {
     // единственным в проекте, не подключённым к зеркалу (все остальные — в display_logic.cpp,
     // этот файл отдельно). Без него зеркало не показывало вообще ничего всё время, пока
     // включён Mute — единственный (не анимированный дальше, см. updateDisplayArea() ниже) кадр
-    frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_OTHER);
+    frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE, FRAME_MIRROR_SCREEN_MUTE);
     u8g2.sendBuffer();
     return;
   }
