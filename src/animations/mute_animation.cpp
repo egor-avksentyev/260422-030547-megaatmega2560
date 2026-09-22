@@ -1,6 +1,7 @@
 #include "mute_animation.h"
 #include "display_logic.h"
 #include "hardware_settings.h"
+#include "frame_mirror.h"
 
 // Кадры анимации: сгенерированы https://wokwi.com/animator (графика icons8.com) в
 // формате Adafruit GFX (бит 7 байта — самый левый пиксель). U8g2's drawXBM() ждёт
@@ -75,6 +76,11 @@ void animateMuteFrame() {
     needsFullClear = false;
     u8g2.clearBuffer();
     u8g2.drawXBM(MUTE_ANIM_X, MUTE_ANIM_Y, FRAME_WIDTH, FRAME_HEIGHT, buf);
+    // Эксперимент (ветка experiment/frame-mirror-serial3, не main) — этот sendBuffer() был
+    // единственным в проекте, не подключённым к зеркалу (все остальные — в display_logic.cpp,
+    // этот файл отдельно). Без него зеркало не показывало вообще ничего всё время, пока
+    // включён Mute — единственный (не анимированный дальше, см. updateDisplayArea() ниже) кадр
+    frameMirrorRequestSend(FRAME_MIRROR_ICON_NONE);
     u8g2.sendBuffer();
     return;
   }
