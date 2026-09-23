@@ -15,8 +15,8 @@
 // Какой контроллер физически стоит сейчас — раскомментируй ОДНУ строку, остальные закомментируй
 // (см. display_logic.h/.cpp — там объект u8g2 объявлен/создан под этот же #define).
 // #define DISPLAY_DRIVER_SH1106 // 1.3", 128x64
-#define DISPLAY_DRIVER_SSD1306 // Текущий экран — 0.96", 128x64
-// #define DISPLAY_DRIVER_SSD1309 // Прежний экран — 2.42", 128x64 (сгорел)
+// #define DISPLAY_DRIVER_SSD1306 // Прежний экран — 0.96", 128x64
+#define DISPLAY_DRIVER_SSD1309 // Текущий экран — 2.42", 128x64 (замена сгоревшего, 2026-09-23)
 
 #define DISPLAY_CS_PIN 10
 #define DISPLAY_DC_PIN 9
