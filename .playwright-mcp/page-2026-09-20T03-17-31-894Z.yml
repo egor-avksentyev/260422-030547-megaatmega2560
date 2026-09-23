@@ -1,0 +1,32 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - img "Spotify" [ref=e5]
+    - generic [ref=e9]:
+      - heading "Welcome back" [level=1] [ref=e11]
+      - generic [ref=e13]:
+        - generic [ref=e14]:
+          - generic [ref=e15]: Email
+          - textbox "Email" [ref=e18]
+        - button "Continue" [ref=e19] [cursor=pointer]
+      - generic [ref=e21]:
+        - text: or
+        - generic [ref=e24]:
+          - link "Continue with Google" [ref=e25] [cursor=pointer]:
+            - /url: /en/login/google?continue=https%3A%2F%2Faccounts.spotify.com%2Fauthorize%3Fscope%3Duser-read-recently-played%26response_type%3Dcode%26redirect_uri%3Dhttps%253A%252F%252Fegor-avksentyev.github.io%252Fesp_32_ethernet_project%252Fspotify%252Fcallback.html%26code_challenge_method%3DS256%26client_id%3D1a0298a844e24d6d8ab31c9342760d42%26code_challenge%3DYsxOnHHKzsss0wHTVDMLGu6_Rd_TMD-WdlyayloY0-Q%26show_dialog%3Dtrue%26flow_ctx%3Dd776fea1-9022-4561-b5ef-aff7ba64d0b9%253A1789895851&client_id=1a0298a844e24d6d8ab31c9342760d42&flow_ctx=d776fea1-9022-4561-b5ef-aff7ba64d0b9%3A1789895851
+          - link "Continue with Facebook" [ref=e32] [cursor=pointer]:
+            - /url: /en/login/facebook?continue=https%3A%2F%2Faccounts.spotify.com%2Fauthorize%3Fscope%3Duser-read-recently-played%26response_type%3Dcode%26redirect_uri%3Dhttps%253A%252F%252Fegor-avksentyev.github.io%252Fesp_32_ethernet_project%252Fspotify%252Fcallback.html%26code_challenge_method%3DS256%26client_id%3D1a0298a844e24d6d8ab31c9342760d42%26code_challenge%3DYsxOnHHKzsss0wHTVDMLGu6_Rd_TMD-WdlyayloY0-Q%26show_dialog%3Dtrue%26flow_ctx%3Dd776fea1-9022-4561-b5ef-aff7ba64d0b9%253A1789895851&client_id=1a0298a844e24d6d8ab31c9342760d42&flow_ctx=d776fea1-9022-4561-b5ef-aff7ba64d0b9%3A1789895851
+          - link "Continue with Apple" [ref=e37] [cursor=pointer]:
+            - /url: /en/login/apple?continue=https%3A%2F%2Faccounts.spotify.com%2Fauthorize%3Fscope%3Duser-read-recently-played%26response_type%3Dcode%26redirect_uri%3Dhttps%253A%252F%252Fegor-avksentyev.github.io%252Fesp_32_ethernet_project%252Fspotify%252Fcallback.html%26code_challenge_method%3DS256%26client_id%3D1a0298a844e24d6d8ab31c9342760d42%26code_challenge%3DYsxOnHHKzsss0wHTVDMLGu6_Rd_TMD-WdlyayloY0-Q%26show_dialog%3Dtrue%26flow_ctx%3Dd776fea1-9022-4561-b5ef-aff7ba64d0b9%253A1789895851&client_id=1a0298a844e24d6d8ab31c9342760d42&flow_ctx=d776fea1-9022-4561-b5ef-aff7ba64d0b9%3A1789895851
+      - generic [ref=e42]:
+        - paragraph [ref=e43]: Don't have an account?
+        - link "Sign up" [ref=e45] [cursor=pointer]:
+          - /url: /en/login/signup?continue=https%3A%2F%2Faccounts.spotify.com%2Fauthorize%3Fscope%3Duser-read-recently-played%26response_type%3Dcode%26redirect_uri%3Dhttps%253A%252F%252Fegor-avksentyev.github.io%252Fesp_32_ethernet_project%252Fspotify%252Fcallback.html%26code_challenge_method%3DS256%26client_id%3D1a0298a844e24d6d8ab31c9342760d42%26code_challenge%3DYsxOnHHKzsss0wHTVDMLGu6_Rd_TMD-WdlyayloY0-Q%26show_dialog%3Dtrue%26flow_ctx%3Dd776fea1-9022-4561-b5ef-aff7ba64d0b9%253A1789895851&client_id=1a0298a844e24d6d8ab31c9342760d42&flow_ctx=d776fea1-9022-4561-b5ef-aff7ba64d0b9%3A1789895851
+      - paragraph [ref=e49]:
+        - text: This site is protected by reCAPTCHA and the Google
+        - link "Privacy Policy" [ref=e50] [cursor=pointer]:
+          - /url: https://policies.google.com/privacy
+        - text: and
+        - link "Terms of Service" [ref=e51] [cursor=pointer]:
+          - /url: https://policies.google.com/terms
+        - text: apply.
+  - alert [ref=e52]

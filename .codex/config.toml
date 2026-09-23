@@ -1,0 +1,10 @@
+[mcp_servers.easyeda-mcp-pro]
+command = "/Users/egor/.nvm/versions/node/v24.18.0/bin/npx"
+args = [
+    "-y",
+    "easyeda-mcp-pro@latest",
+]
+
+[mcp_servers.easyeda-mcp-pro.env]
+TOOL_PROFILE = "core"
+PATH = "/Users/egor/.nvm/versions/node/v24.18.0/bin:/usr/bin:/bin:/usr/sbin:/sbin"

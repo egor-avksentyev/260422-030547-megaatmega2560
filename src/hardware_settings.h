@@ -385,8 +385,8 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 // мотору или последнего валидного ИК-кадра прошло меньше этого времени — см. main.cpp
 #define SENSOR_READ_QUIET_GAP_MS 400
 
-// --- Экспериментальное попиксельное зеркало OLED через отдельный UART (frame_mirror.h/.cpp,
-// ветка experiment/frame-mirror-serial3 — НЕ main). Serial3 (пины TX3=14/RX3=15) выбран
+// --- Попиксельное зеркало OLED через отдельный UART (frame_mirror.h/.cpp). Serial3
+// (пины TX3=14/RX3=15) выбран
 // специально: свободен (не используется больше нигде в прошивке), в отличие от Serial1
 // (пин 18 занят энкодером, ENCODER_A_PIN) ---
 // "Чистый" делитель на 16МГц (0% ошибки таймера UART, в отличие от, например, 115200) —
