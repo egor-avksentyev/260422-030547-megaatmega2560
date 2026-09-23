@@ -1,4 +1,0 @@
-[     569ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://192.168.1.129/status:0
-[     664ms] TypeError: Failed to fetch
-    at poll (http://192.168.1.129/:1:54668)
-    at http://192.168.1.129/:1:54765
