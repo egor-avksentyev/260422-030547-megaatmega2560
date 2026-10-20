@@ -575,13 +575,23 @@ void esp32LinkSendMenu() {
 // SETTINGS:<bassDb>:<highDb>:<volumePct>:<sourceIdx>:<eqIdx>:<colorIdx>:<bypass 0|1>:
 // <vu 0|1>\n — КОМАНДНАЯ цель каждого пункта (settings[] напрямую), не живые показания
 // потенциометров, см. esp32_link.h за тем, почему это оправданное отличие от MENU: выше
+//
+// Найден живьём (2026-10-21): это было верно для Source/EQ/Color/Bypass/VU (им правда есть
+// куда писать — settings[currentMenuItem] реально обновляется при вводе, см. esp32_link.cpp/
+// remote_control.cpp/main.cpp), но НЕ для Bass/High/Volume — их слоты settings[0]/[1]/[2] не
+// присваиваются вообще НИГДЕ в прошивке (grep по всему репозиторию это подтвердил), кроме как
+// читаются здесь. Останутся нулями всю жизнь прошивки — кноп (KnobControl) показывал на
+// HomeIdle "Bass --"/дальше навсегда 0, хотя реальная ручка физически крутится и MENU: это
+// показывает корректно (readBassPotPercent() и т.п., та же пара функций, что и ниже у
+// esp32LinkSendMenu()). Фикс — те же живые показания потенциометра сюда тоже, раз единственная
+// альтернатива (settings[]) для этих трёх пунктов — мёртвый код, который никогда не был живым.
 void esp32LinkSendSettingsSnapshot() {
   Serial2.print("SETTINGS:");
-  Serial2.print(settings[0]); // Bass
+  Serial2.print(readBassPotPercent()); // Bass — живое показание, settings[0] никогда не пишется
   Serial2.print(':');
-  Serial2.print(settings[1]); // High
+  Serial2.print(readHighPotPercent()); // High — живое показание, settings[1] никогда не пишется
   Serial2.print(':');
-  Serial2.print(settings[2]); // Volume
+  Serial2.print(readVolumePotPercent()); // Volume — живое показание, settings[2] никогда не пишется
   Serial2.print(':');
   Serial2.print(settings[sourceMenuIndex()]);
   Serial2.print(':');
