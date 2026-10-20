@@ -19,6 +19,16 @@
 //                    executeWebCommand() (esp32_link.cpp) — третий, независимый от ИК-пульта
 //                    и энкодера источник ввода, с той же логикой действий, продублированной
 //                    так же, как между пультом и энкодером (см. CLAUDE.md)
+//   CMD:J<index>   — новое (KnobControl Фаза 4): прыгнуть сразу на пункт меню <index>
+//                    (0..MENU_ITEM_COUNT-1, порядок как в menuItems[]) и войти в его
+//                    настройку (inSettingsMode=true) одним действием — кноп так безопасно
+//                    "запрыгивает" в произвольный пункт своей (перегруппированной) карусели,
+//                    не полагаясь на относительную навигацию R/L и не вычисляя самостоятельно,
+//                    на сколько шагов она должна проехать (риск гонки с другим источником
+//                    ввода, двигающим ту же Mega-карусель параллельно)
+//   CMD:X          — новое (Фаза 4): явно выйти из настройки (inSettingsMode=false), без
+//                    второго смысла, которым сейчас перегружен 'E' (тот либо входит, либо
+//                    выходит, в зависимости от inSettingsMode — кнопу нужен однозначный выход)
 //   META:<text>    — метадата Arylic ("Artist - Title"), актуальна только пока playing==true
 //   IP:<a.b.c.d>   — текущий IP ESP32 в реальной сети (не во время его собственной настройки)
 //   PLAY:0 / PLAY:1 — играет ли Arylic прямо сейчас (используется для авто-переключения
@@ -45,6 +55,48 @@
 //                    hardware_settings.h) независимо от того, открыт ли на самой Mega экран
 //                    Info — веб-странице эти значения нужны всегда
 //   VOLT:<value>   — напряжение сети (целое число вольт), тем же таймером, что и TEMP:
+//
+// Новое (KnobControl Фаза 4) — см. esp32LinkSendMenu()/esp32LinkSendSettingsSnapshot()/
+// esp32LinkSendMuteAndStreamer() ниже за тем, когда именно каждая шлётся:
+//   MENU:<item>:<inSettingsMode 0|1>:<value...>\n — шлётся БЕЗУСЛОВНО, периодически (не
+//                    только пока открыта настройка) — <value...> присутствует и имеет смысл
+//                    ТОЛЬКО когда inSettingsMode==1 (кноп реально смотрит на экран настройки
+//                    этого пункта, а не на свою собственную карусель/другой пункт); при
+//                    inSettingsMode==0 строка заканчивается сразу после него, без значения —
+//                    сам переход 1→0 это единственный сигнал, по которому кноп узнаёт "выйти
+//                    обратно в карусель" (ESP32-компаньон только перепроброс, ему неоткуда
+//                    взять такой сигнал самому). <value...> по типу пункта:
+//                      Bass/High   — одно число, дБ, ЖИВОЕ показание потенциометра
+//                                    (readBassPotPercent()/readHighPotPercent() —
+//                                    motor_position.h), НЕ settings[] (та хранит командную
+//                                    цель мотора, не физическое положение ручки, см.
+//                                    CLAUDE.md)
+//                      Volume      — одно число, %, тем же принципом — живое показание
+//                                    (readVolumePotPercent()), не settings[]
+//                      VU Meter/Bypass — одно число, 0/1 (settings[currentMenuItem])
+//                      Source/EQ/Color — индекс пресета (settings[currentMenuItem])
+//                      Dimmer      — четыре числа:
+//                                    displayBrightness%:ringDimmer%:dimmerEditingDisplay
+//                                    0|1:dimmerRowLocked 0|1
+//                      Info        — без значения вообще (температуры/IP кноп и так знает
+//                                    через WS82 от ESP32, не от Mega)
+//   SETTINGS:<bassDb>:<highDb>:<volumePct>:<sourceIdx>:<eqIdx>:<colorIdx>:<bypass 0|1>:
+//            <vu 0|1>\n — прямое отражение settings[] целиком (КОМАНДНАЯ цель каждого
+//                    пункта, не живые показания потенциометров, в отличие от MENU: выше —
+//                    это для превью в карусели кнопа, где секундная задержка за реальным
+//                    физическим положением ручки не имеет значения), независимо от
+//                    currentMenuItem/inSettingsMode — нужно кнопу даже когда он не смотрит
+//                    ни на один конкретный Mega-пункт (например сидит на Home/Color)
+//   MUTE:<isMuted 0|1>\n — сразу при переключении (см. вызовы esp32LinkSendMute() в
+//                    remote_control.cpp/esp32_link.cpp), тем же принципом, что уже есть у
+//                    POWER: — плюс периодически, тем же таймером, что SETTINGS:/STREAMER:
+//                    ниже, на случай если кноп пропустил/переподключился
+//   STREAMER:<0|1>\n — независимый глобальный тумблер (см. main.h/streamerRelayOn), НЕ
+//                    привязан к текущему пункту меню — только периодически (тем же таймером,
+//                    что SETTINGS:), без explicit-отправки на каждое из пяти мест, где
+//                    streamerRelayOn меняется (сознательное упрощение — см.
+//                    ESP32_LINK_MENU_SEND_INTERVAL_MS в hardware_settings.h за тем же
+//                    принципом у MENU:)
 // ============================================================================
 
 #include <Arduino.h>
@@ -100,3 +152,26 @@ void esp32LinkSendPower(bool poweredOn);
 // на самой Mega. temps[i] — как из readAllTemperatures() (TEMP_SENSOR_INVALID, если датчик
 // не отвечает), voltage — как из readMainsVoltage()
 void esp32LinkSendSensors(const float temps[3], int voltage);
+
+// --- KnobControl Фаза 4 — см. комментарий в начале файла за полным форматом ---
+
+// Шлёт "MENU:...\n" — вызывать из loop() безусловно, периодически
+// (ESP32_LINK_MENU_SEND_INTERVAL_MS), независимо от inSettingsMode — само поле
+// inSettingsMode=0|1 внутри телеграммы несёт этот факт, и переход 1→0 это единственный
+// сигнал, по которому кноп узнаёт "выйти обратно в свою карусель" (см. комментарий в начале
+// файла)
+void esp32LinkSendMenu();
+
+// Шлёт "SETTINGS:...\n" — вызывать периодически из loop() (тем же таймером, что
+// esp32LinkSendSensors()), независимо от currentMenuItem/inSettingsMode
+void esp32LinkSendSettingsSnapshot();
+
+// Шлёт "MUTE:<isMuted 0|1>\n" + "STREAMER:<streamerRelayOn 0|1>\n" — вызывать периодически
+// (тем же таймером, что esp32LinkSendSettingsSnapshot()). MUTE: дополнительно шлётся сразу в
+// момент переключения — см. esp32LinkSendMute() ниже
+void esp32LinkSendMuteAndStreamer();
+
+// Шлёт только "MUTE:<muted 0|1>\n" — вызывать сразу в момент переключения isMuted (тем же
+// принципом, что esp32LinkSendPower() у Power), а не дожидаться следующего периодического
+// esp32LinkSendMuteAndStreamer()
+void esp32LinkSendMute(bool muted);

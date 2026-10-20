@@ -909,6 +909,19 @@ void loop() {
     handleRemoteInput(); // См. комментарий у блока обновления колец выше
   }
 
+  // MENU: кнопу (Фаза 4 KnobControl, см. esp32_link.h) — простая периодика, БЕЗУСЛОВНО (не
+  // только пока inSettingsMode — само поле inSettingsMode=0|1 несёт этот факт, и переход 1→0
+  // это единственный способ, которым кноп узнаёт "выйти обратно в свою карусель", см.
+  // esp32LinkSendMenu()). Независимо от того, каким из трёх источников ввода что-то
+  // поменялось (см. ESP32_LINK_MENU_SEND_INTERVAL_MS за тем, почему не explicit-отправка на
+  // каждое изменение). Serial2.print() не блокирует и не требует того же "тихого окна", что
+  // readMainsVoltage() ниже — не гейтится на lastMotorInputTime/lastIrFrameTime
+  static unsigned long lastMenuSend = 0;
+  if (millis() - lastMenuSend >= ESP32_LINK_MENU_SEND_INTERVAL_MS) {
+    lastMenuSend = millis();
+    esp32LinkSendMenu();
+  }
+
   // Живое обновление температур на экране Info, пока он открыт — readAllTemperatures()
   // не блокирует (см. temperature_sensor.cpp), поэтому handleRemoteInput() здесь не
   // обязателен так же, как у блоков выше, но не помешает
@@ -941,6 +954,14 @@ void loop() {
       int voltage = readMainsVoltage();
       esp32LinkSendSensors(temps, voltage);
       esp32LinkSendPower(!powerOff);
+      // Фаза 4 KnobControl — тем же таймером: SETTINGS: не зависит от currentMenuItem/
+      // inSettingsMode (нужен кнопу даже когда он не смотрит ни на один конкретный Mega-
+      // пункт), MUTE:/STREAMER: периодически страхуют explicit-отправку в момент
+      // переключения (esp32LinkSendMute() у Mute, только периодика у Streamer — см.
+      // esp32_link.h за тем, почему последнему не нужна explicit-отправка на все 5 мест,
+      // где меняется streamerRelayOn)
+      esp32LinkSendSettingsSnapshot();
+      esp32LinkSendMuteAndStreamer();
     }
   }
 }

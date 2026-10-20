@@ -377,6 +377,12 @@ const int mainsVoltageCalPoints = sizeof(mainsVoltageCalRaw) / sizeof(mainsVolta
 // esp32LinkSendSensors() в main.cpp/loop()) — реже, чем INFO_UPDATE_INTERVAL_MS (веб-странице
 // не нужна такая же частота, как живому обновлению на самом OLED)
 #define ESP32_LINK_SENSOR_SEND_INTERVAL_MS 2000
+// Как часто Mega шлёт MENU: (см. esp32_link.h/.cpp, Фаза 4 KnobControl) — пока inSettingsMode,
+// независимо от того, что именно поменялось и каким из трёх источников ввода (пульт/энкодер/
+// CMD:). Сознательное упрощение вместо explicit-отправки на каждое изменение в десятке мест
+// трёх уже задублированных путей ввода: 200мс неотличимо от "сразу" на глаз, тот же порядок,
+// что и у живого обновления Bass/High/Volume (см. main.cpp/loop(), блок lastPotUpdate)
+#define ESP32_LINK_MENU_SEND_INTERVAL_MS 200
 // readMainsVoltage() (voltage_sensor.cpp) — 400 подряд analogRead(), ~40мс блокировки loop().
 // Раньше это читалось только пока на самой Mega открыт экран Info; теперь (см. esp32LinkSendSensors()
 // в main.cpp/loop()) читается в фоне всегда, и этот блокирующий кусок может случайно попасть

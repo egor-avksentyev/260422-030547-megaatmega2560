@@ -6,6 +6,7 @@
 #include "relay.h"
 #include "animation_logic.h"
 #include "motor_driver_logic.h"
+#include "motor_position.h"
 #include "neopixel.h"
 #include "on_off_logic.h"
 #include "animations/mute_animation.h"
@@ -49,6 +50,64 @@ static void redrawAfterMuteOrPower() {
   } else {
     drawArrowIndicator(settings[currentMenuItem], false, false);
   }
+}
+
+// Общий вход в настройку текущего пункта (currentMenuItem уже должен быть выставлен) — то,
+// что раньше было только внутри case 'E' (ветка !inSettingsMode), вынесено сюда для
+// переиспользования в executeWebJump() (CMD:J, Фаза 4 KnobControl) ниже
+static void enterSettingsModeForCurrentItem() {
+  inSettingsMode = true;
+  if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
+    drawToggleSwitch(settings[currentMenuItem] == 1);
+  } else if (menuItems[currentMenuItem] == "Dimmer") {
+    dimmerEditingDisplay = false;
+    dimmerRowLocked = false;
+    drawDimmerScreen();
+  } else if (menuItems[currentMenuItem] == "Color") {
+    drawColorScreen(settings[currentMenuItem]);
+  } else if (menuItems[currentMenuItem] == "Source") {
+    drawSourceScreen(settings[currentMenuItem]);
+  } else if (menuItems[currentMenuItem] == "EQ") {
+    drawEqScreen(settings[currentMenuItem]);
+  } else if (menuItems[currentMenuItem] == "Info") {
+    drawInfoScreen();
+  } else {
+    drawArrowIndicator(settings[currentMenuItem], false, false);
+  }
+}
+
+// Общий выход из настройки обратно в карусель — раньше только внутри case 'E' (ветка
+// inSettingsMode), вынесено сюда для переиспользования в case 'X' (Фаза 4 KnobControl) ниже
+static void exitSettingsMode() {
+  inSettingsMode = false;
+  resetCursor();
+  encoderValue = 0;
+  stopAllMotors();
+  drawMenu();
+}
+
+// CMD:J<index> (Фаза 4 KnobControl, см. esp32_link.h) — в отличие от остальных букв, несёт
+// числовой параметр, поэтому не влезает в switch(letter) у executeWebCommand() ниже и
+// разбирается отдельно, в handleLine(). Гейты (powerOff/isMuted/nowPlayingActive) — те же,
+// что в начале executeWebCommand(), продублированы здесь по той же причине (CLAUDE.md, "два
+// независимых источника ввода... при изменении поведения пункта меню правь оба пути
+// параллельно" — то же дублирование, что и у остальных команд в этом файле). Разница с 'E' —
+// 'J' всегда реально прыгает и входит в указанный пункт, даже если полноэкранный Now Playing
+// был открыт (тот выходит в меню и возвращает, не входя никуда)
+static void executeWebJump(int index) {
+  if (index < 0 || index >= MENU_ITEM_COUNT) {
+    return;
+  }
+  if (nowPlayingActive && !nowPlayingMenuVisitActive) {
+    exitNowPlayingToMenu();
+  } else {
+    refreshNowPlayingMenuActivity();
+  }
+  if (powerOff || isMuted) {
+    return;
+  }
+  currentMenuItem = index;
+  enterSettingsModeForCurrentItem();
 }
 
 // Диспетчер команд с веб-страницы (CMD:<letter>, см. esp32_link.h) — letter один из
@@ -116,6 +175,13 @@ static void executeWebCommand(char letter) {
         applyRingColorScheme();
         drawColorScreen(settings[currentMenuItem]);
         saveSettings();
+      } else if (menuItems[currentMenuItem] == "Info" && settings[currentMenuItem] == INFO_STREAMER_ROW_INDEX) {
+        // Фаза 4 KnobControl — тот же путь, что уже есть у IR_RIGHT в remote_control.cpp,
+        // продублирован сюда (третий независимый источник ввода, см. CLAUDE.md), раньше здесь
+        // не было вообще — у CMD: не было способа переключить Streamer
+        streamerRelayOn = true;
+        applyStreamerRelay();
+        drawInfoScreen();
       }
       break;
 
@@ -147,35 +213,27 @@ static void executeWebCommand(char letter) {
         applyRingColorScheme();
         drawColorScreen(settings[currentMenuItem]);
         saveSettings();
+      } else if (menuItems[currentMenuItem] == "Info" && settings[currentMenuItem] == INFO_STREAMER_ROW_INDEX) {
+        // Фаза 4 KnobControl — симметрично 'R' выше
+        streamerRelayOn = false;
+        applyStreamerRelay();
+        drawInfoScreen();
       }
       break;
 
     case 'E':
       if (!inSettingsMode) {
-        inSettingsMode = true;
-        if (menuItems[currentMenuItem] == "VU Meter" || menuItems[currentMenuItem] == "Bypass") {
-          drawToggleSwitch(settings[currentMenuItem] == 1);
-        } else if (menuItems[currentMenuItem] == "Dimmer") {
-          dimmerEditingDisplay = false;
-          dimmerRowLocked = false;
-          drawDimmerScreen();
-        } else if (menuItems[currentMenuItem] == "Color") {
-          drawColorScreen(settings[currentMenuItem]);
-        } else if (menuItems[currentMenuItem] == "Source") {
-          drawSourceScreen(settings[currentMenuItem]);
-        } else if (menuItems[currentMenuItem] == "EQ") {
-          drawEqScreen(settings[currentMenuItem]);
-        } else if (menuItems[currentMenuItem] == "Info") {
-          drawInfoScreen();
-        } else {
-          drawArrowIndicator(settings[currentMenuItem], false, false);
-        }
+        enterSettingsModeForCurrentItem();
       } else {
-        inSettingsMode = false;
-        resetCursor();
-        encoderValue = 0;
-        stopAllMotors();
-        drawMenu();
+        exitSettingsMode();
+      }
+      break;
+
+    case 'X':
+      // Фаза 4 KnobControl — явный выход, без входа обратно, если уже снаружи (в отличие от
+      // 'E' тут нет второго смысла)
+      if (inSettingsMode) {
+        exitSettingsMode();
       }
       break;
 
@@ -277,6 +335,7 @@ static void executeWebCommand(char letter) {
     case 'M':
       isMuted = !isMuted;
       digitalWrite(RELAY_PIN_MUTE, isMuted ? HIGH : LOW);
+      esp32LinkSendMute(isMuted); // Сразу, тем же принципом, что esp32LinkSendPower() у Power
       if (isMuted) {
         resetMuteAnimation();
       } else {
@@ -353,7 +412,13 @@ static void handleLine(char* line) {
       trackPosCaptureMillis = millis();
     }
   } else if (strncmp(line, "CMD:", 4) == 0 && line[4] != '\0') {
-    executeWebCommand(line[4]);
+    // CMD:J<index> (Фаза 4 KnobControl) несёт числовой параметр после буквы — разобрать его
+    // здесь, до executeWebCommand() (та видит только один char, ей тут делать нечего)
+    if (line[4] == 'J' && line[5] != '\0') {
+      executeWebJump(atoi(line + 5));
+    } else {
+      executeWebCommand(line[4]);
+    }
   }
 }
 
@@ -439,4 +504,103 @@ void esp32LinkSendSensors(const float temps[3], int voltage) {
   Serial2.println(t3);
   Serial2.print("VOLT:");
   Serial2.println(voltage);
+}
+
+// --- KnobControl Фаза 4 — см. esp32_link.h за полным форматом каждой телеграммы ---
+
+// Нет готового bypassMenuIndex() (в отличие от dimmerMenuIndex()/colorMenuIndex()/
+// sourceMenuIndex()/vuMeterMenuIndex()/eqMenuIndex() в main.h) — остальные пять пунктов этот
+// индекс никогда не искали по имени за пределами текущего пункта, Bypass здесь первый. Тот же
+// линейный поиск по имени, что уже в этом файле есть у case 'S' (строка с Source выше)
+static int bypassMenuIndex() {
+  for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+    if (menuItems[i] == "Bypass") {
+      return i;
+    }
+  }
+  return 4; // Не должно случиться — "Bypass" всегда есть в menuItems[], см. main.cpp
+}
+
+// MENU:<item>:<inSettingsMode 0|1>:<value...>\n — вызывается БЕЗУСЛОВНО, периодически,
+// независимо от inSettingsMode (см. main.cpp/loop()): поле inSettingsMode само несёт этот
+// факт, и его переход 1→0 — единственный сигнал, по которому кноп узнаёт "я вышла из
+// настройки" и откатывается в свою карусель (см. esp32_link.h, "Живое зеркало только внутри
+// конкретного экрана"). Если бы телеграмма вообще переставала приходить при выходе, кноп
+// просто навсегда застрял бы на последнем известном значении, не имея сигнала к откату —
+// ESP32-компаньон по архитектуре "чистый проброс без своей логики", ему неоткуда взять такой
+// сигнал самому
+void esp32LinkSendMenu() {
+  // beginVolumeOverlay() (main.h/main.cpp) — глобальный шорткат громкости с пульта/CMD: —
+  // временно подставляет currentMenuItem под Volume, но НЕ трогает inSettingsMode (если
+  // пользователь висел на обычной карусели, оно так и останется false на время оверлея).
+  // Без этой поправки MENU: отправляла бы "Volume:0:" (без значения) в самом частом случае
+  // применения оверлея — кноп остался бы без живого дБ ровно тогда, когда они нужнее всего.
+  // volumeOverlayActive — такой же законный повод показать значение, как и настоящий
+  // inSettingsMode, тут это один и тот же случай "Mega прямо сейчас показывает Volume
+  // пользователю", просто два разных способа туда попасть
+  bool showingValue = inSettingsMode || volumeOverlayActive;
+  Serial2.print("MENU:");
+  Serial2.print(menuItems[currentMenuItem]);
+  Serial2.print(':');
+  Serial2.print(showingValue ? '1' : '0');
+  Serial2.print(':');
+  if (!showingValue) {
+    Serial2.println();
+    return;
+  }
+  if (menuItems[currentMenuItem] == "Bass") {
+    // Живое показание потенциометра, НЕ settings[] — см. esp32_link.h за тем, почему это
+    // важное отличие от SETTINGS: ниже
+    Serial2.println(readBassPotPercent());
+  } else if (menuItems[currentMenuItem] == "High") {
+    Serial2.println(readHighPotPercent());
+  } else if (menuItems[currentMenuItem] == "Volume") {
+    Serial2.println(readVolumePotPercent());
+  } else if (menuItems[currentMenuItem] == "Dimmer") {
+    Serial2.print(displayBrightness);
+    Serial2.print(':');
+    Serial2.print(settings[currentMenuItem]);
+    Serial2.print(':');
+    Serial2.print(dimmerEditingDisplay ? '1' : '0');
+    Serial2.print(':');
+    Serial2.println(dimmerRowLocked ? '1' : '0');
+  } else if (menuItems[currentMenuItem] == "Info") {
+    Serial2.println(); // Без значения вообще, см. esp32_link.h
+  } else {
+    // VU Meter/Bypass (0/1), Source/Color/EQ (индекс пресета) — одно число, прямо из settings[]
+    Serial2.println(settings[currentMenuItem]);
+  }
+}
+
+// SETTINGS:<bassDb>:<highDb>:<volumePct>:<sourceIdx>:<eqIdx>:<colorIdx>:<bypass 0|1>:
+// <vu 0|1>\n — КОМАНДНАЯ цель каждого пункта (settings[] напрямую), не живые показания
+// потенциометров, см. esp32_link.h за тем, почему это оправданное отличие от MENU: выше
+void esp32LinkSendSettingsSnapshot() {
+  Serial2.print("SETTINGS:");
+  Serial2.print(settings[0]); // Bass
+  Serial2.print(':');
+  Serial2.print(settings[1]); // High
+  Serial2.print(':');
+  Serial2.print(settings[2]); // Volume
+  Serial2.print(':');
+  Serial2.print(settings[sourceMenuIndex()]);
+  Serial2.print(':');
+  Serial2.print(settings[eqMenuIndex()]);
+  Serial2.print(':');
+  Serial2.print(settings[colorMenuIndex()]);
+  Serial2.print(':');
+  Serial2.print(settings[bypassMenuIndex()]);
+  Serial2.print(':');
+  Serial2.println(settings[vuMeterMenuIndex()]);
+}
+
+void esp32LinkSendMuteAndStreamer() {
+  esp32LinkSendMute(isMuted);
+  Serial2.print("STREAMER:");
+  Serial2.println(streamerRelayOn ? '1' : '0');
+}
+
+void esp32LinkSendMute(bool muted) {
+  Serial2.print("MUTE:");
+  Serial2.println(muted ? '1' : '0');
 }
