@@ -128,11 +128,17 @@ static void executeWebCommand(char letter) {
     // Now Playing — см. тот же пропуск для IR_UP/IR_DOWN в remote_control.cpp, раньше здесь не
     // был продублирован, из-за чего громкость с пульта работала, а с веб-страницы — нет),
     // остальное игнорируется, пока показан полноэкранный Now Playing
+    //
+    // 'S' (Source) добавлен в разрешённый список 2026-10-23 — реальный баг, найденный живьём
+    // через KnobControl: IR_SET у пульта УЖЕ был разрешён здесь (remote_control.cpp, тот же
+    // гейт), а 'S' от ESP32/кноба — нет, хотя у обоих абсолютно одинаковая логика в своём
+    // case/switch ниже. Quick Actions на кнобе ожидают, что Source переключается "всегда",
+    // как Mute/Power — асимметрия путей ввода была чистым недосмотром, не осознанным решением.
     if (letter == 'E') {
       exitNowPlayingToMenu();
       return;
     }
-    if (letter != 'M' && letter != 'P' && letter != 'U' && letter != 'D') {
+    if (letter != 'M' && letter != 'P' && letter != 'U' && letter != 'D' && letter != 'S') {
       return;
     }
   } else {
